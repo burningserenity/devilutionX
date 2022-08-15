@@ -20,11 +20,11 @@
 #include "controls/plrctrls.h"
 #include "cursor.h"
 #include "doom.h"
-#include "engine/cel_sprite.hpp"
+#include "engine/clx_sprite.hpp"
 #include "engine/dx.h"
 #include "engine/load_cel.hpp"
 #include "engine/random.hpp"
-#include "engine/render/cl2_render.hpp"
+#include "engine/render/clx_render.hpp"
 #include "engine/render/text_render.hpp"
 #include "init.h"
 #include "inv_iterators.hpp"
@@ -132,7 +132,7 @@ _sfx_id ItemInvSnds[] = {
 
 namespace {
 
-OptionalOwnedCelSprite itemanims[ITEMTYPES];
+OptionalOwnedClxSpriteList itemanims[ITEMTYPES];
 
 enum class PlayerArmorGraphic : uint8_t {
 	// clang-format off
@@ -886,9 +886,6 @@ int SaveItemPower(Item &item, ItemPower &power)
 		item._iFlags |= ItemSpecialEffect::NoMana;
 		drawmanaflag = true;
 		break;
-	case IPL_NOHEALPLR:
-		item._iFlags |= ItemSpecialEffect::NoHealOnPlayer;
-		break;
 	case IPL_ABSHALFTRAP:
 		item._iFlags |= ItemSpecialEffect::HalfTrapDamage;
 		break;
@@ -900,9 +897,6 @@ int SaveItemPower(Item &item, ItemPower &power)
 		break;
 	case IPL_ALLRESZERO:
 		item._iFlags |= ItemSpecialEffect::ZeroResistance;
-		break;
-	case IPL_NOHEALMON:
-		item._iFlags |= ItemSpecialEffect::NoHealOnMonsters;
 		break;
 	case IPL_STEALMANA:
 		if (power.param1 == 3)
@@ -959,9 +953,6 @@ int SaveItemPower(Item &item, ItemPower &power)
 		item._iDurability = power.param1;
 		item._iMaxDur = power.param1;
 		break;
-	case IPL_FASTSWING:
-		item._iFlags |= ItemSpecialEffect::FasterAttack;
-		break;
 	case IPL_ONEHAND:
 		item._iLoc = ILOC_ONEHAND;
 		break;
@@ -970,9 +961,6 @@ int SaveItemPower(Item &item, ItemPower &power)
 		break;
 	case IPL_RNDSTEALLIFE:
 		item._iFlags |= ItemSpecialEffect::RandomStealLife;
-		break;
-	case IPL_INFRAVISION:
-		item._iFlags |= ItemSpecialEffect::Infravision;
 		break;
 	case IPL_NOMINSTR:
 		item._iMinStr = 0;
@@ -994,10 +982,6 @@ int SaveItemPower(Item &item, ItemPower &power)
 		item._iLMinDam = 2;
 		item._iLMaxDam = 0;
 		break;
-	case IPL_FIRERESCLVL:
-		item._iPLFR = 30 - MyPlayer->_pLevel;
-		item._iPLFR = std::max<int16_t>(item._iPLFR, 0);
-		break;
 	case IPL_FIRERES_CURSE:
 		item._iPLFR -= r;
 		break;
@@ -1005,11 +989,6 @@ int SaveItemPower(Item &item, ItemPower &power)
 		item._iPLLR -= r;
 		break;
 	case IPL_MAGICRES_CURSE:
-		item._iPLMR -= r;
-		break;
-	case IPL_ALLRES_CURSE:
-		item._iPLFR -= r;
-		item._iPLLR -= r;
 		item._iPLMR -= r;
 		break;
 	case IPL_DEVASTATION:
@@ -1624,10 +1603,11 @@ void SpawnRock()
 	if (ActiveItemCount >= MAXITEMS)
 		return;
 
-	Object *stand = nullptr;
+	const Object *stand = nullptr;
 	for (int i = 0; i < ActiveObjectCount; i++) {
-		if (Objects[ActiveObjects[i]]._otype == OBJ_STAND) {
-			stand = &Objects[ActiveObjects[i]];
+		const Object &object = Objects[ActiveObjects[i]];
+		if (object._otype == OBJ_STAND) {
+			stand = &object;
 			break;
 		}
 	}
@@ -1636,7 +1616,7 @@ void SpawnRock()
 		return;
 
 	int ii = AllocateItem();
-	auto &item = Items[ii];
+	Item &item = Items[ii];
 
 	item.position = stand->position;
 	dItem[item.position.x][item.position.y] = ii + 1;
@@ -1758,80 +1738,103 @@ void PrintItemOil(char iDidx)
 
 void DrawUniqueInfoWindow(const Surface &out)
 {
-	Cl2Draw(out, GetPanelPosition(UiPanels::Inventory, { 24 - SidePanelSize.width, 327 }), CelSprite { *pSTextBoxCels }, 0);
+	ClxDraw(out, GetPanelPosition(UiPanels::Inventory, { 24 - SidePanelSize.width, 327 }), (*pSTextBoxCels)[0]);
 	DrawHalfTransparentRectTo(out, GetRightPanel().position.x - SidePanelSize.width + 27, GetRightPanel().position.y + 28, 265, 297);
+}
+
+void printItemMiscKBM(const Item &item, const bool isOil, const bool isCastOnTarget)
+{
+	if (item._iMiscId == IMISC_MAPOFDOOM) {
+		AddPanelString(_("Right-click to view"));
+
+	} else if (isOil) {
+		PrintItemOil(item._iMiscId);
+		AddPanelString(_("Right-click to use"));
+	} else if (isCastOnTarget) {
+		AddPanelString(_("Right-click to read, then"));
+		AddPanelString(_("left-click to target"));
+	} else if (IsAnyOf(item._iMiscId, IMISC_BOOK, IMISC_NOTE, IMISC_SCROLL)){
+		AddPanelString(_("Right-click to read"));
+	}
+}
+
+void printItemMiscVirtualGamepad(const Item &item, const bool isOil)
+{
+	if (item._iMiscId == IMISC_MAPOFDOOM) {
+		AddPanelString(_("Activate to view"));
+	} else if (isOil) {
+		PrintItemOil(item._iMiscId);
+		if (!invflag) {
+			AddPanelString(_("Open inventory to use"));
+
+		} else {
+			AddPanelString(_("Activate to use"));
+		}
+	} else if (item._iMiscId == IMISC_SCROLL){
+		AddPanelString(_("Select from spell book, then"));
+		AddPanelString(_("cast to read"));
+        } else {
+          AddPanelString(_("Activate to read"));
+        }
+}
+
+void printItemMiscGamepad(const Item &item, const bool isOil, const bool isCastOnTarget, const bool usingDualShock)
+{
+	if (item._iMiscId == IMISC_MAPOFDOOM) {
+		if (usingDualShock) {
+			AddPanelString(_("Triangle to view"));
+		} else {
+			AddPanelString(_("Y to view"));
+		}
+	} else if (isOil) {
+		PrintItemOil(item._iMiscId);
+		if (!invflag) {
+			AddPanelString(_("Open inventory to use"));
+
+		} else if (usingDualShock) {
+			AddPanelString(_("Triangle to use"));
+		} else {
+			AddPanelString(_("Y to use"));
+		}
+	} else if (isCastOnTarget) {
+		AddPanelString(_("Select from spell book, then"));
+		if (usingDualShock)
+			AddPanelString(_("Square to read"));
+		else
+			AddPanelString(_("X to read"));
+	} else if (IsAnyOf(item._iMiscId, IMISC_BOOK, IMISC_NOTE, IMISC_SCROLL)){
+		if (usingDualShock)
+			AddPanelString(_("Triangle to read"));
+		else
+			AddPanelString(_("Y to read"));
+	}
 }
 
 void PrintItemMisc(const Item &item)
 {
-	if (item._iMiscId == IMISC_SCROLL) {
-		if (ControlMode == ControlTypes::KeyboardAndMouse) {
-			if (item._iSpell == SPL_TOWN || item._iSpell == SPL_IDENTIFY) {
-				AddPanelString(_("Right-click to read, then"));
-				AddPanelString(_("left-click to target"));
-			} else {
-				AddPanelString(_("Right-click to read"));
-			}
-		} else {
-			if (!invflag) {
-				AddPanelString(_("Open inventory to use"));
-			} else {
-				AddPanelString(_("Activate to read"));
-			}
-		}
-	}
-	if (item._iMiscId == IMISC_SCROLLT) {
-		if (ControlMode == ControlTypes::KeyboardAndMouse) {
-			if (item._iSpell == SPL_FLASH) {
-				AddPanelString(_("Right-click to read"));
-			} else {
-				AddPanelString(_("Right-click to read, then"));
-				AddPanelString(_("left-click to target"));
-			}
-		} else {
-			if (TargetsMonster(item._iSpell)) {
-				AddPanelString(_("Select from spell book, then"));
-				AddPanelString(_("cast spell to read"));
-			} else if (!invflag) {
-				AddPanelString(_("Open inventory to use"));
-			} else {
-				AddPanelString(_("Activate to read"));
-			}
-		}
-	}
-	if ((item._iMiscId >= IMISC_USEFIRST && item._iMiscId <= IMISC_USELAST)
-	    || (item._iMiscId > IMISC_OILFIRST && item._iMiscId < IMISC_OILLAST)
-	    || (item._iMiscId > IMISC_RUNEFIRST && item._iMiscId < IMISC_RUNELAST)) {
-		PrintItemOil(item._iMiscId);
-		if (ControlMode == ControlTypes::KeyboardAndMouse) {
-			AddPanelString(_("Right-click to use"));
-		} else {
-			if (!invflag) {
-				AddPanelString(_("Open inventory to use"));
-			} else {
-				AddPanelString(_("Activate to use"));
-			}
-		}
-	}
-	if (IsAnyOf(item._iMiscId, IMISC_BOOK, IMISC_NOTE)) {
-		if (ControlMode == ControlTypes::KeyboardAndMouse) {
-			AddPanelString(_("Right-click to read"));
-		} else {
-			AddPanelString(_("Activate to read"));
-		}
-	}
-	if (item._iMiscId == IMISC_MAPOFDOOM) {
-		if (ControlMode == ControlTypes::KeyboardAndMouse) {
-			AddPanelString(_("Right-click to view"));
-		} else {
-			AddPanelString(_("Activate to view"));
-		}
-	}
 	if (item._iMiscId == IMISC_EAR) {
 		AddPanelString(fmt::format(fmt::runtime(pgettext("player", "Level: {:d}")), item._ivalue));
+		return;
 	}
 	if (item._iMiscId == IMISC_AURIC) {
 		AddPanelString(_("Doubles gold capacity"));
+		return;
+	}
+	const bool isOil = (item._iMiscId >= IMISC_USEFIRST && item._iMiscId <= IMISC_USELAST)
+	    || (item._iMiscId > IMISC_OILFIRST && item._iMiscId < IMISC_OILLAST)
+	    || (item._iMiscId > IMISC_RUNEFIRST && item._iMiscId < IMISC_RUNELAST);
+	const bool isCastOnTarget = (item._iMiscId == IMISC_SCROLLT && item._iSpell != SPL_FLASH)
+	    || item._iSpell == SPL_TOWN
+	    || item._iSpell == SPL_IDENTIFY
+	    || TargetsMonster(item._iSpell);
+
+	if (ControlMode == ControlTypes::KeyboardAndMouse) {
+		printItemMiscKBM(item, isOil, isCastOnTarget);
+	} else if (ControlMode == ControlTypes::VirtualGamepad || GamepadType == SDL_CONTROLLER_TYPE_VIRTUAL) {
+		printItemMiscVirtualGamepad(item, isOil);
+	} else {
+		const bool usingDualShock = IsAnyOf(GamepadType, SDL_CONTROLLER_TYPE_PS3, SDL_CONTROLLER_TYPE_PS4, SDL_CONTROLLER_TYPE_PS5);
+		printItemMiscGamepad(item, isOil, isCastOnTarget, usingDualShock);
 	}
 }
 
@@ -1946,7 +1949,7 @@ int RndPremiumItem(int minlvl, int maxlvl)
 	return RndVendorItem<PremiumItemOk>(minlvl, maxlvl);
 }
 
-void SpawnOnePremium(Item &premiumItem, int plvl, Player &player)
+void SpawnOnePremium(Item &premiumItem, int plvl, const Player &player)
 {
 	int itemValue = 0;
 	bool keepGoing = false;
@@ -2225,6 +2228,41 @@ void NextItemRecord(int i)
 	itemrecord[i].nIndex = itemrecord[gnNumGetRecords].nIndex;
 }
 
+int RndItemForMonsterLevel(int8_t monsterLevel)
+{
+	if (GenerateRnd(100) > 40)
+		return 0;
+
+	if (GenerateRnd(100) > 25)
+		return IDI_GOLD + 1;
+
+	int ril[512];
+
+	int ri = 0;
+	for (int i = 0; AllItemsList[i].iLoc != ILOC_INVALID; i++) {
+		if (!IsItemAvailable(i))
+			continue;
+
+		if (AllItemsList[i].iRnd == IDROP_DOUBLE && monsterLevel >= AllItemsList[i].iMinMLvl
+		    && ri < 512) {
+			ril[ri] = i;
+			ri++;
+		}
+		if (AllItemsList[i].iRnd != IDROP_NEVER && monsterLevel >= AllItemsList[i].iMinMLvl
+		    && ri < 512) {
+			ril[ri] = i;
+			ri++;
+		}
+		if (AllItemsList[i].iSpell == SPL_RESURRECT && !gbIsMultiplayer)
+			ri--;
+		if (AllItemsList[i].iSpell == SPL_HEALOTHER && !gbIsMultiplayer)
+			ri--;
+	}
+
+	int r = GenerateRnd(ri);
+	return ril[r] + 1;
+}
+
 } // namespace
 
 bool IsItemAvailable(int i)
@@ -2283,7 +2321,7 @@ void InitItemGFX()
 	int itemTypes = gbIsHellfire ? ITEMTYPES : 35;
 	for (int i = 0; i < itemTypes; i++) {
 		*BufCopy(arglist, "Items\\", ItemDropNames[i], ".CEL") = '\0';
-		itemanims[i] = LoadCelAsCl2(arglist, ItemAnimWidth);
+		itemanims[i] = LoadCel(arglist, ItemAnimWidth);
 	}
 	memset(UniqueItemFlags, 0, sizeof(UniqueItemFlags));
 }
@@ -2578,8 +2616,6 @@ void CalcPlrItemVals(Player &player, bool loadgfx)
 	player._pILMinDam = lmin;
 	player._pILMaxDam = lmax;
 
-	player._pInfraFlag = HasAnyOf(iflgs, ItemSpecialEffect::Infravision);
-
 	player._pBlockFlag = false;
 	if (player._pClass == HeroClass::Monk) {
 		if (player.InvBody[INVLOC_HAND_LEFT]._itype == ItemType::Staff && player.InvBody[INVLOC_HAND_LEFT]._iStatFlag) {
@@ -2667,10 +2703,10 @@ void CalcPlrItemVals(Player &player, bool loadgfx)
 		player.previewCelSprite = std::nullopt;
 		if (player._pmode == PM_STAND) {
 			LoadPlrGFX(player, player_graphic::Stand);
-			player.AnimInfo.changeAnimationData(player.AnimationData[static_cast<size_t>(player_graphic::Stand)].GetCelSpritesForDirection(player._pdir), player._pNFrames, 4);
+			player.AnimInfo.changeAnimationData(player.AnimationData[static_cast<size_t>(player_graphic::Stand)].spritesForDirection(player._pdir), player._pNFrames, 4);
 		} else {
 			LoadPlrGFX(player, player_graphic::Walk);
-			player.AnimInfo.changeAnimationData(player.AnimationData[static_cast<size_t>(player_graphic::Walk)].GetCelSpritesForDirection(player._pdir), player._pWFrames, 1);
+			player.AnimInfo.changeAnimationData(player.AnimationData[static_cast<size_t>(player_graphic::Walk)].spritesForDirection(player._pdir), player._pWFrames, 1);
 		}
 	} else {
 		player._pgfxnum = gfxNum;
@@ -3035,10 +3071,12 @@ void SetupItem(Item &item)
 
 int RndItem(const Monster &monster)
 {
-	if ((monster.data().treasure & T_UNIQ) != 0)
-		return -((monster.data().treasure & T_MASK) + 1);
+	const uint16_t monsterTreasureFlags = monster.data().treasure;
 
-	if ((monster.data().treasure & T_NODROP) != 0)
+	if ((monsterTreasureFlags & T_UNIQ) != 0)
+		return -((monsterTreasureFlags & T_MASK) + 1);
+
+	if ((monsterTreasureFlags & T_NODROP) != 0)
 		return 0;
 
 	if (GenerateRnd(100) > 40)
@@ -3521,7 +3559,7 @@ void GetItemFrm(Item &item)
 {
 	int it = ItemCAnimTbl[item._iCurs];
 	if (itemanims[it])
-		item.AnimInfo.celSprite.emplace(*itemanims[it]);
+		item.AnimInfo.sprites.emplace(*itemanims[it]);
 }
 
 void GetItemStr(Item &item)
@@ -3633,7 +3671,6 @@ bool DoOil(Player &player, int cii)
 		else
 			return fmt::format(fmt::runtime(_("Resist Magic: {:+d}% MAX")), MaxResistance);
 	case IPL_ALLRES:
-	case IPL_ALLRES_CURSE:
 		if (item._iPLFR < MaxResistance)
 			return fmt::format(fmt::runtime(_("Resist All: {:+d}%")), item._iPLFR);
 		else
@@ -3714,8 +3751,6 @@ bool DoOil(Player &player, int cii)
 		return _("attacker takes 1-3 damage");
 	case IPL_NOMANA:
 		return _("user loses all mana");
-	case IPL_NOHEALPLR:
-		return _("you can't heal");
 	case IPL_ABSHALFTRAP:
 		return _("absorbs half of trap damage");
 	case IPL_KNOCKBACK:
@@ -3724,8 +3759,6 @@ bool DoOil(Player &player, int cii)
 		return _(/*xgettext:no-c-format*/ "+200% damage vs. demons");
 	case IPL_ALLRESZERO:
 		return _("All Resistance equals 0");
-	case IPL_NOHEALMON:
-		return _("hit monster doesn't heal");
 	case IPL_STEALMANA:
 		if (HasAnyOf(item._iFlags, ItemSpecialEffect::StealMana3))
 			return _(/*xgettext:no-c-format*/ "hit steals 3% mana");
@@ -3768,8 +3801,6 @@ bool DoOil(Player &player, int cii)
 		return _("unusual item damage");
 	case IPL_SETDUR:
 		return _("altered durability");
-	case IPL_FASTSWING:
-		return _("Faster attack swing");
 	case IPL_ONEHAND:
 		return _("one handed sword");
 	case IPL_DRAINLIFE:
@@ -3778,8 +3809,6 @@ bool DoOil(Player &player, int cii)
 		return _("life stealing");
 	case IPL_NOMINSTR:
 		return _("no strength requirement");
-	case IPL_INFRAVISION:
-		return _("see with infravision");
 	case IPL_INVCURS:
 		return { string_view(" ") };
 	case IPL_ADDACLIFE:
@@ -3789,11 +3818,6 @@ bool DoOil(Player &player, int cii)
 			return fmt::format(fmt::runtime(_("lightning damage: {:d}-{:d}")), item._iFMinDam, item._iFMaxDam);
 	case IPL_ADDMANAAC:
 		return _("charged bolts on hits");
-	case IPL_FIRERESCLVL:
-		if (item._iPLFR > 0)
-			return fmt::format(fmt::runtime(_("Resist Fire: {:+d}%")), item._iPLFR);
-		else
-			return { string_view(" ") };
 	case IPL_DEVASTATION:
 		return _("occasional triple damage");
 	case IPL_DECAY:
@@ -3801,7 +3825,7 @@ bool DoOil(Player &player, int cii)
 	case IPL_PERIL:
 		return _("2x dmg to monst, 1x to you");
 	case IPL_JESTERS:
-		return std::string(_(/*xgettext:no-c-format*/ "Random 0 - 500% damage"));
+		return std::string(_(/*xgettext:no-c-format*/ "Random 0 - 600% damage"));
 	case IPL_CRYSTALLINE:
 		return fmt::format(fmt::runtime(_(/*xgettext:no-c-format*/ "low dur, {:+d}% damage")), item._iPLDam);
 	case IPL_DOPPELGANGER:
@@ -4002,9 +4026,9 @@ void UseItem(int pnum, item_misc_id mid, spell_id spl)
 				NewCursor(CURSOR_TELEPORT);
 		} else {
 			ClrPlrPath(player);
-			player._pSpell = spl;
-			player._pSplType = RSPLTYPE_INVALID;
-			player._pSplFrom = 3;
+			player.queuedSpell.spellId = spl;
+			player.queuedSpell.spellType = RSPLTYPE_SCROLL;
+			player.queuedSpell.spellFrom = 0;
 			player.destAction = ACTION_SPELL;
 			player.destParam1 = cursPosition.x;
 			player.destParam2 = cursPosition.y;
@@ -4149,7 +4173,7 @@ void SpawnSmith(int lvl)
 	SortVendor(smithitem + PinnedItemCount);
 }
 
-void SpawnPremium(Player &player)
+void SpawnPremium(const Player &player)
 {
 	int8_t lvl = player._pLevel;
 	int maxItems = gbIsHellfire ? SMITH_PREMIUM_ITEMS : 6;
@@ -4534,10 +4558,6 @@ std::string DebugSpawnItem(std::string itemName)
 	GetSuperItemSpace(pos, ii);
 
 	uint32_t begin = SDL_GetTicks();
-	Monster fake_m;
-	fake_m.levelType = 0;
-	fake_m.uniqueType = UniqueMonsterType::None;
-
 	int i = 0;
 	for (;; i++) {
 		// using a better rng here to seed the item to prevent getting stuck repeating same values using old one
@@ -4549,9 +4569,8 @@ std::string DebugSpawnItem(std::string itemName)
 		if (i > max_iter)
 			return StrCat("Item not found in ", max_iter, " tries!");
 
-		fake_m.level = dist(BetterRng) % CF_LEVEL + 1;
-
-		int idx = RndItem(fake_m);
+		const int8_t monsterLevel = dist(BetterRng) % CF_LEVEL + 1;
+		int idx = RndItemForMonsterLevel(monsterLevel);
 		if (idx > 1) {
 			idx--;
 		} else
@@ -4560,7 +4579,7 @@ std::string DebugSpawnItem(std::string itemName)
 		Point bkp = item.position;
 		item = {};
 		item.position = bkp;
-		SetupAllItems(item, idx, AdvanceRndSeed(), fake_m.level, 1, false, false, false);
+		SetupAllItems(item, idx, AdvanceRndSeed(), monsterLevel, 1, false, false, false);
 
 		std::string tmp(item._iIName);
 		std::transform(tmp.begin(), tmp.end(), tmp.begin(), [](unsigned char c) { return std::tolower(c); });
@@ -4655,11 +4674,11 @@ void Item::setNewAnimation(bool showAnimation)
 {
 	int8_t it = ItemCAnimTbl[_iCurs];
 	int8_t numberOfFrames = ItemAnimLs[it];
-	auto celSprite = itemanims[it] ? OptionalCelSprite { *itemanims[it] } : std::nullopt;
+	OptionalClxSpriteList sprite = itemanims[it] ? OptionalClxSpriteList { *itemanims[static_cast<size_t>(it)] } : std::nullopt;
 	if (_iCurs != ICURS_MAGIC_ROCK)
-		AnimInfo.setNewAnimation(celSprite, numberOfFrames, 1, AnimationDistributionFlags::ProcessAnimationPending, 0, numberOfFrames);
+		AnimInfo.setNewAnimation(sprite, numberOfFrames, 1, AnimationDistributionFlags::ProcessAnimationPending, 0, numberOfFrames);
 	else
-		AnimInfo.setNewAnimation(celSprite, numberOfFrames, 1);
+		AnimInfo.setNewAnimation(sprite, numberOfFrames, 1);
 	_iPostDraw = false;
 	_iRequest = false;
 	if (showAnimation) {

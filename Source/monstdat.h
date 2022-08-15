@@ -69,7 +69,6 @@ enum monster_resistance : uint8_t {
 	IMMUNE_MAGIC     = 1 << 3,
 	IMMUNE_FIRE      = 1 << 4,
 	IMMUNE_LIGHTNING = 1 << 5,
-	IMMUNE_NULL_40   = 1 << 6,
 	IMMUNE_ACID      = 1 << 7,
 	// clang-format on
 };
@@ -278,7 +277,7 @@ enum _monster_id : int16_t {
 /**
  * @brief Defines if and how a group of monsters should be spawned with the unique monster
  */
-enum class UniqueMonsterPack {
+enum class UniqueMonsterPack : uint8_t {
 	/**
 	 * @brief Don't spawn a group of monsters with the unique monster
 	 */

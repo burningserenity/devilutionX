@@ -5,9 +5,8 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "DiabloUI/art.h"
 #include "DiabloUI/ui_item.h"
-#include "engine/cel_sprite.hpp"
+#include "engine/clx_sprite.hpp"
 #include "player.h"
 #include "utils/display.h"
 
@@ -61,11 +60,12 @@ struct _uiheroinfo {
 	bool spawned;
 };
 
-extern std::optional<OwnedCelSpriteSheetWithFrameHeight> ArtLogo;
-extern std::array<std::optional<OwnedCelSpriteSheetWithFrameHeight>, 3> ArtFocus;
-extern std::optional<OwnedCelSpriteWithFrameHeight> ArtBackgroundWidescreen;
-extern std::optional<OwnedCelSpriteSheetWithFrameHeight> ArtBackground;
-extern Art ArtCursor;
+extern OptionalOwnedClxSpriteList ArtLogo;
+extern std::array<OptionalOwnedClxSpriteList, 2> DifficultyIndicator;
+extern std::array<OptionalOwnedClxSpriteList, 3> ArtFocus;
+extern OptionalOwnedClxSpriteList ArtBackgroundWidescreen;
+extern OptionalOwnedClxSpriteList ArtBackground;
+extern OptionalOwnedClxSpriteList ArtCursor;
 
 extern bool (*gfnHeroInfo)(bool (*fninfofunc)(_uiheroinfo *));
 
@@ -104,10 +104,11 @@ void UiFocusNavigationYesNo();
 void UiInitList(void (*fnFocus)(int value), void (*fnSelect)(int value), void (*fnEsc)(), const std::vector<std::unique_ptr<UiItemBase>> &items, bool wraps = false, void (*fnFullscreen)() = nullptr, bool (*fnYesNo)() = nullptr, size_t selectedItem = 0);
 void UiClearScreen();
 void UiPollAndRender(std::function<bool(SDL_Event &)> eventHandler = nullptr);
+void UiRenderItem(const UiItemBase &item);
 void UiRenderItems(const std::vector<UiItemBase *> &items);
 void UiRenderItems(const std::vector<std::unique_ptr<UiItemBase>> &items);
 void UiInitList_clear();
-CelFrameWithHeight UiGetHeroDialogSprite(size_t heroClassIndex);
+ClxSprite UiGetHeroDialogSprite(size_t heroClassIndex);
 
 void mainmenu_restart_repintro();
 } // namespace devilution

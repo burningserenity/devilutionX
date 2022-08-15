@@ -91,9 +91,17 @@ enum shrine_type : uint8_t {
 	NumberOfShrineTypes
 };
 
+enum {
+	// clang-format off
+	DOOR_CLOSED  =  0,
+	DOOR_OPEN    =  1,
+	DOOR_BLOCKED =  2,
+	// clang-format on
+};
+
 int trapid;
 int trapdir;
-std::unique_ptr<byte[]> pObjCels[40];
+OptionalOwnedClxSpriteList pObjCels[40];
 object_graphic_id ObjFileList[40];
 /** Specifies the number of active objects. */
 int leverid;
@@ -407,7 +415,9 @@ void InitRndLocObj5x5(int min, int max, _object_id objtype)
 
 void ClrAllObjects()
 {
-	memset(Objects, 0, sizeof(Objects));
+	for (Object &object : Objects) {
+		object = {};
+	}
 	ActiveObjectCount = 0;
 	for (int i = 0; i < MAXOBJECTS; i++) {
 		AvailableObjects[i] = i;
@@ -459,21 +469,19 @@ void AddCandles()
  * @param affectedArea The map region to be updated when this object is activated by the player.
  * @param msg The quest text to play when the player activates the book.
  */
-void AddBookLever(Rectangle affectedArea, _speech_id msg)
+void AddBookLever(_object_id type, Rectangle affectedArea, _speech_id msg)
 {
 	std::optional<Point> position = GetRandomObjectPosition({ 2, 2 });
 	if (!position)
 		return;
 
-	if (Quests[Q_BLIND].IsAvailable())
-		AddObject(OBJ_BLINDBOOK, *position);
-	if (Quests[Q_WARLORD].IsAvailable())
-		AddObject(OBJ_STEELTOME, *position);
-	if (Quests[Q_BLOOD].IsAvailable()) {
+	if (type == OBJ_BLOODBOOK)
 		position = SetPiece.position.megaToWorld() + Displacement { 9, 24 };
-		AddObject(OBJ_BLOODBOOK, *position);
-	}
-	ObjectAtPosition(*position)->InitializeQuestBook(affectedArea, leverid, msg);
+
+	Object *lever = AddObject(type, *position);
+	assert(lever != nullptr);
+
+	lever->InitializeQuestBook(affectedArea, leverid, msg);
 	leverid++;
 }
 
@@ -571,7 +579,7 @@ void AddObjTraps()
 		rndv = 25;
 	for (int j = 0; j < MAXDUNY; j++) {
 		for (int i = 0; i < MAXDUNX; i++) {
-			Object *triggerObject = ObjectAtPosition({ i, j }, false);
+			Object *triggerObject = FindObjectAtPosition({ i, j }, false);
 			if (triggerObject == nullptr || GenerateRnd(100) >= rndv)
 				continue;
 
@@ -587,8 +595,7 @@ void AddObjTraps()
 				if (!CanPlaceWallTrap(xp, j) || i - xp <= 1)
 					continue;
 
-				AddObject(OBJ_TRAPL, { xp, j });
-				trapObject = ObjectAtPosition({ xp, j });
+				trapObject = AddObject(OBJ_TRAPL, { xp, j });
 			} else {
 				int yp = j - 1;
 				while (IsTileNotSolid({ i, yp }))
@@ -597,8 +604,7 @@ void AddObjTraps()
 				if (!CanPlaceWallTrap(i, yp) || j - yp <= 1)
 					continue;
 
-				AddObject(OBJ_TRAPR, { i, yp });
-				trapObject = ObjectAtPosition({ i, yp });
+				trapObject = AddObject(OBJ_TRAPR, { i, yp });
 			}
 
 			if (trapObject != nullptr) {
@@ -615,7 +621,7 @@ void AddChestTraps()
 {
 	for (int j = 0; j < MAXDUNY; j++) {
 		for (int i = 0; i < MAXDUNX; i++) { // NOLINT(modernize-loop-convert)
-			Object *chestObject = ObjectAtPosition({ i, j }, false);
+			Object *chestObject = FindObjectAtPosition({ i, j }, false);
 			if (chestObject != nullptr && chestObject->IsUntrappedChest() && GenerateRnd(100) < 10) {
 				switch (chestObject->_otype) {
 				case OBJ_CHEST1:
@@ -664,9 +670,9 @@ void LoadMapObjects(const char *path, Point start, Rectangle mapRange = {}, int 
 			auto objectId = static_cast<uint8_t>(SDL_SwapLE16(objectLayer[j * width + i]));
 			if (objectId != 0) {
 				Point mapPos = start + Displacement { i, j };
-				AddObject(ObjTypeConv[objectId], mapPos);
-				if (leveridx > 0)
-					ObjectAtPosition(mapPos)->InitializeLoadedObject(mapRange, leveridx);
+				Object *mapObject = AddObject(ObjTypeConv[objectId], mapPos);
+				if (leveridx > 0 && mapObject != nullptr)
+					mapObject->InitializeLoadedObject(mapRange, leveridx);
 			}
 		}
 	}
@@ -776,7 +782,11 @@ void SetupObject(Object &object, Point position, _object_id ot)
 
 		const int j = std::distance(std::begin(ObjFileList), found);
 
-		object._oAnimData = pObjCels[j].get();
+		if (pObjCels[j]) {
+			object._oAnimData.emplace(*pObjCels[j]);
+		} else {
+			object._oAnimData = std::nullopt;
+		}
 	}
 	object._oAnimFlag = objectData.oAnimFlag;
 	if (object._oAnimFlag) {
@@ -831,6 +841,26 @@ void AddCryptStoryBook(int s)
 	AddObject(OBJ_L5CANDLE, *position + Displacement { 2, 1 });
 }
 
+void AddNakrulLever()
+{
+	while (true) {
+		int xp = GenerateRnd(80) + 16;
+		int yp = GenerateRnd(80) + 16;
+		if (RndLocOk(xp - 1, yp - 1)
+		    && RndLocOk(xp, yp - 1)
+		    && RndLocOk(xp + 1, yp - 1)
+		    && RndLocOk(xp - 1, yp)
+		    && RndLocOk(xp, yp)
+		    && RndLocOk(xp + 1, yp)
+		    && RndLocOk(xp - 1, yp + 1)
+		    && RndLocOk(xp, yp + 1)
+		    && RndLocOk(xp + 1, yp + 1)) {
+			break;
+		}
+	}
+	AddObject(OBJ_L5LEVER, { UberRow + 3, UberCol - 1 });
+}
+
 void AddNakrulBook(int a1, Point position)
 {
 	AddCryptBook(OBJ_L5BOOKS, a1, position);
@@ -838,7 +868,7 @@ void AddNakrulBook(int a1, Point position)
 
 void AddNakrulGate()
 {
-	AddNakrulLeaver();
+	AddNakrulLever();
 	switch (GenerateRnd(6)) {
 	case 0:
 		AddNakrulBook(6, { UberRow + 3, UberCol });
@@ -974,9 +1004,8 @@ void AddLazStand()
 void DeleteObject(int oi, int i)
 {
 	const Object &object = Objects[oi];
-	int ox = object.position.x;
-	int oy = object.position.y;
-	dObject[ox][oy] = 0;
+	Point position = object.position;
+	dObject[position.x][position.y] = 0;
 	AvailableObjects[-ActiveObjectCount + MAXOBJECTS] = oi;
 	ActiveObjectCount--;
 	if (ObjectUnderCursor == &object) // Unselect object if this was highlighted by player
@@ -985,12 +1014,12 @@ void DeleteObject(int oi, int i)
 		ActiveObjects[i] = ActiveObjects[ActiveObjectCount];
 }
 
-void AddChest(Object &chest, _object_id type)
+void AddChest(Object &chest)
 {
 	if (FlipCoin())
 		chest._oAnimFrame += 3;
 	chest._oRndSeed = AdvanceRndSeed();
-	switch (type) {
+	switch (chest._otype) {
 	case OBJ_CHEST1:
 	case OBJ_TCHEST1:
 		if (setlevel) {
@@ -1026,78 +1055,275 @@ void ObjSetMicro(Point position, int pn)
 	dPiece[position.x][position.y] = pn;
 }
 
-void InitializeL1Door(Object &door)
+void DoorSet(Point position, bool isLeftDoor)
 {
-	door.InitializeDoor();
-	door._oVar1 = dPiece[door.position.x][door.position.y] + 1;
-	if (door._otype == _object_id::OBJ_L1LDOOR) {
-		door._oVar2 = dPiece[door.position.x][door.position.y - 1] + 1;
-	} else { // _object_id::OBJ_L1RDOOR
-		door._oVar2 = dPiece[door.position.x - 1][door.position.y] + 1;
+	int pn = dPiece[position.x][position.y];
+	switch (pn) {
+	case 42:
+		ObjSetMicro(position, 391);
+		break;
+	case 44:
+		ObjSetMicro(position, 393);
+		break;
+	case 49:
+		ObjSetMicro(position, isLeftDoor ? 410 : 411);
+		break;
+	case 53:
+		ObjSetMicro(position, 396);
+		break;
+	case 54:
+		ObjSetMicro(position, 397);
+		break;
+	case 60:
+		ObjSetMicro(position, 398);
+		break;
+	case 66:
+		ObjSetMicro(position, 399);
+		break;
+	case 67:
+		ObjSetMicro(position, 400);
+		break;
+	case 68:
+		ObjSetMicro(position, 402);
+		break;
+	case 69:
+		ObjSetMicro(position, 403);
+		break;
+	case 71:
+		ObjSetMicro(position, 405);
+		break;
+	case 211:
+		ObjSetMicro(position, 406);
+		break;
+	case 353:
+		ObjSetMicro(position, 408);
+		break;
+	case 354:
+		ObjSetMicro(position, 409);
+		break;
+	case 410:
+	case 411:
+		ObjSetMicro(position, 395);
+		break;
 	}
 }
 
-void InitializeL5Door(Object &door)
+void CryptDoorSet(Point position, bool isLeftDoor)
 {
-	door.InitializeDoor();
-	door._oVar1 = dPiece[door.position.x][door.position.y] + 1;
-	if (door._otype == _object_id::OBJ_L5LDOOR) {
-		door._oVar2 = dPiece[door.position.x][door.position.y - 1] + 1;
-	} else { // _object_id::OBJ_L5RDOOR
-		door._oVar2 = dPiece[door.position.x - 1][door.position.y] + 1;
+	int pn = dPiece[position.x][position.y];
+	switch (pn) {
+	case 74:
+		ObjSetMicro(position, 203);
+		break;
+	case 78:
+		ObjSetMicro(position, 207);
+		break;
+	case 85:
+		ObjSetMicro(position, isLeftDoor ? 231 : 233);
+		break;
+	case 90:
+		ObjSetMicro(position, 214);
+		break;
+	case 92:
+		ObjSetMicro(position, 217);
+		break;
+	case 98:
+		ObjSetMicro(position, 219);
+		break;
+	case 110:
+		ObjSetMicro(position, 221);
+		break;
+	case 112:
+		ObjSetMicro(position, 223);
+		break;
+	case 114:
+		ObjSetMicro(position, 225);
+		break;
+	case 116:
+		ObjSetMicro(position, 227);
+		break;
+	case 118:
+		ObjSetMicro(position, 229);
+		break;
+	case 231:
+	case 233:
+		ObjSetMicro(position, 211);
+		break;
 	}
 }
 
-void InitializeMicroDoor(Object &door)
+void SetDoorStateOpen(Object &door)
 {
-	door.InitializeDoor();
-	int pieceNumber;
+	door._oVar4 = DOOR_OPEN;
+	door._oPreFlag = true;
+	door._oMissFlag = true;
+	door._oSelFlag = 2;
+
 	switch (door._otype) {
-	case _object_id::OBJ_L2LDOOR:
-		pieceNumber = 537;
+	case OBJ_L1LDOOR:
+		// 214: blood splater
+		// 407: blood pool
+		// 392: open door (no frame)
+		ObjSetMicro(door.position, door._oVar1 == 214 ? 407 : 392);
+		dSpecial[door.position.x][door.position.y] = 7;
+		DoorSet(door.position + Direction::NorthEast, true);
 		break;
-	case _object_id::OBJ_L2RDOOR:
-		pieceNumber = 539;
+	case OBJ_L1RDOOR:
+		ObjSetMicro(door.position, 394);
+		dSpecial[door.position.x][door.position.y] = 8;
+		DoorSet(door.position + Direction::NorthWest, false);
 		break;
-	case _object_id::OBJ_L3LDOOR:
-		pieceNumber = 530;
+	case OBJ_L2LDOOR:
+		ObjSetMicro(door.position, 12);
+		dSpecial[door.position.x][door.position.y] = 5;
 		break;
-	case _object_id::OBJ_L3RDOOR:
-		pieceNumber = 533;
+	case OBJ_L2RDOOR:
+		ObjSetMicro(door.position, 16);
+		dSpecial[door.position.x][door.position.y] = 6;
+		break;
+	case OBJ_L3LDOOR:
+		ObjSetMicro(door.position, 537);
+		break;
+	case OBJ_L3RDOOR:
+		ObjSetMicro(door.position, 540);
+		break;
+	case OBJ_L5LDOOR:
+		ObjSetMicro(door.position, 205);
+		CryptDoorSet(door.position + Direction::NorthEast, true);
+		break;
+	case OBJ_L5RDOOR:
+		ObjSetMicro(door.position, 208);
+		CryptDoorSet(door.position + Direction::NorthWest, false);
 		break;
 	default:
-		return; // unreachable
+		break;
 	}
-	ObjSetMicro(door.position, pieceNumber);
 }
 
-void AddSarc(int i)
+void SetDoorStateClosed(Object &door)
 {
-	dObject[Objects[i].position.x][Objects[i].position.y - 1] = -(i + 1);
-	Objects[i]._oVar1 = GenerateRnd(10);
-	Objects[i]._oRndSeed = AdvanceRndSeed();
-	if (Objects[i]._oVar1 >= 8) {
+	door._oVar4 = DOOR_CLOSED;
+	door._oPreFlag = false;
+	door._oMissFlag = false;
+	door._oSelFlag = 3;
+
+	switch (door._otype) {
+	case OBJ_L1LDOOR: {
+		// Clear overlapping arches
+		dSpecial[door.position.x][door.position.y] = 0;
+		ObjSetMicro(door.position, door._oVar1 - 1);
+
+		// Restore the normal tile where the open door used to be
+		auto openPosition = door.position + Direction::NorthEast;
+		if (door._oVar2 == 50 && dPiece[openPosition.x][openPosition.y] == 395)
+			ObjSetMicro(openPosition, 411);
+		else
+			ObjSetMicro(openPosition, door._oVar2 - 1);
+		break;
+	} break;
+	case OBJ_L1RDOOR: {
+		// Clear overlapping arches
+		dSpecial[door.position.x][door.position.y] = 0;
+		ObjSetMicro(door.position, door._oVar1 - 1);
+
+		// Restore the normal tile where the open door used to be
+		auto openPosition = door.position + Direction::NorthWest;
+		if (door._oVar2 == 50 && dPiece[openPosition.x][openPosition.y] == 395)
+			ObjSetMicro(openPosition, 410);
+		else
+			ObjSetMicro(openPosition, door._oVar2 - 1);
+		break;
+	} break;
+	case OBJ_L2LDOOR:
+		// Clear overlapping arches
+		dSpecial[door.position.x][door.position.y] = 0;
+		ObjSetMicro(door.position, 537);
+		break;
+	case OBJ_L2RDOOR:
+		// Clear overlapping arches
+		dSpecial[door.position.x][door.position.y] = 0;
+		ObjSetMicro(door.position, 539);
+		break;
+	case OBJ_L3LDOOR:
+		ObjSetMicro(door.position, 530);
+		break;
+	case OBJ_L3RDOOR:
+		ObjSetMicro(door.position, 533);
+		break;
+	case OBJ_L5LDOOR: {
+		ObjSetMicro(door.position, door._oVar1 - 1);
+
+		// Restore the normal tile where the open door used to be
+		auto openPosition = door.position + Direction::NorthEast;
+		if (door._oVar2 == 86 && dPiece[openPosition.x][openPosition.y] == 209)
+			ObjSetMicro(openPosition, 233);
+		else
+			ObjSetMicro(openPosition, door._oVar2 - 1);
+	} break;
+	case OBJ_L5RDOOR: {
+		ObjSetMicro(door.position, door._oVar1 - 1);
+
+		// Restore the normal tile where the open door used to be
+		auto openPosition = door.position + Direction::NorthWest;
+		if (door._oVar2 == 86 && dPiece[openPosition.x][openPosition.y] == 209)
+			ObjSetMicro(openPosition, 231);
+		else
+			ObjSetMicro(openPosition, door._oVar2 - 1);
+	} break;
+	default:
+		break;
+	}
+}
+
+void AddDoor(Object &door)
+{
+	door._oDoorFlag = true;
+
+	switch (door._otype) {
+	case OBJ_L1LDOOR:
+	case OBJ_L5LDOOR:
+		door._oVar1 = dPiece[door.position.x][door.position.y] + 1;
+		door._oVar2 = dPiece[door.position.x][door.position.y - 1] + 1;
+		break;
+	case OBJ_L1RDOOR:
+	case OBJ_L5RDOOR:
+		door._oVar1 = dPiece[door.position.x][door.position.y] + 1;
+		door._oVar2 = dPiece[door.position.x - 1][door.position.y] + 1;
+		break;
+	default:
+		break;
+	}
+
+	SetDoorStateClosed(door);
+}
+
+void AddSarcophagus(Object &sarcophagus)
+{
+	dObject[sarcophagus.position.x][sarcophagus.position.y - 1] = -(sarcophagus.GetId() + 1);
+	sarcophagus._oVar1 = GenerateRnd(10);
+	sarcophagus._oRndSeed = AdvanceRndSeed();
+	if (sarcophagus._oVar1 >= 8) {
 		Monster *monster = PreSpawnSkeleton();
 		if (monster != nullptr) {
-			Objects[i]._oVar2 = monster->getId();
+			sarcophagus._oVar2 = monster->getId();
 		} else {
-			Objects[i]._oVar2 = -1;
+			sarcophagus._oVar2 = -1;
 		}
 	}
 }
 
-void AddFlameTrap(int i)
+void AddFlameTrap(Object &flameTrap)
 {
-	Objects[i]._oVar1 = trapid;
-	Objects[i]._oVar2 = 0;
-	Objects[i]._oVar3 = trapdir;
-	Objects[i]._oVar4 = 0;
+	flameTrap._oVar1 = trapid;
+	flameTrap._oVar2 = 0;
+	flameTrap._oVar3 = trapdir;
+	flameTrap._oVar4 = 0;
 }
 
-void AddFlameLvr(int i)
+void AddFlameLever(Object &flameLever)
 {
-	Objects[i]._oVar1 = trapid;
-	Objects[i]._oVar2 = MIS_FLAMEC;
+	flameLever._oVar1 = trapid;
+	flameLever._oVar2 = MIS_FLAMEC;
 }
 
 void AddTrap(Object &trap)
@@ -1145,12 +1371,12 @@ void AddBarrel(Object &barrel)
 	}
 }
 
-void AddShrine(int i)
+void AddShrine(Object &shrine)
 {
-	Objects[i]._oRndSeed = AdvanceRndSeed();
+	shrine._oRndSeed = AdvanceRndSeed();
 	bool slist[NumberOfShrineTypes];
 
-	Objects[i]._oPreFlag = true;
+	shrine._oPreFlag = true;
 
 	int shrines = gbIsHellfire ? NumberOfShrineTypes : 26;
 
@@ -1168,140 +1394,100 @@ void AddShrine(int i)
 		val = GenerateRnd(shrines);
 	} while (!slist[val]);
 
-	Objects[i]._oVar1 = val;
+	shrine._oVar1 = val;
 	if (!FlipCoin()) {
-		Objects[i]._oAnimFrame = 12;
-		Objects[i]._oAnimLen = 22;
+		shrine._oAnimFrame = 12;
+		shrine._oAnimLen = 22;
 	}
 }
 
-void AddBookcase(int i)
+void AddBookcase(Object &bookcase)
 {
-	Objects[i]._oRndSeed = AdvanceRndSeed();
-	Objects[i]._oPreFlag = true;
+	bookcase._oRndSeed = AdvanceRndSeed();
+	bookcase._oPreFlag = true;
 }
 
-void AddBookstand(int i)
+void AddLargeFountain(Object &fountain)
 {
-	Objects[i]._oRndSeed = AdvanceRndSeed();
+	int ox = fountain.position.x;
+	int oy = fountain.position.y;
+	dObject[ox][oy - 1] = -(fountain.GetId() + 1);
+	dObject[ox - 1][oy] = -(fountain.GetId() + 1);
+	dObject[ox - 1][oy - 1] = -(fountain.GetId() + 1);
+	fountain._oRndSeed = AdvanceRndSeed();
 }
 
-void AddBloodFtn(int i)
-{
-	Objects[i]._oRndSeed = AdvanceRndSeed();
-}
-
-void AddPurifyingFountain(int i)
-{
-	int ox = Objects[i].position.x;
-	int oy = Objects[i].position.y;
-	dObject[ox][oy - 1] = -(i + 1);
-	dObject[ox - 1][oy] = -(i + 1);
-	dObject[ox - 1][oy - 1] = -(i + 1);
-	Objects[i]._oRndSeed = AdvanceRndSeed();
-}
-
-void AddArmorStand(int i)
+void AddArmorStand(Object &armorStand)
 {
 	if (!armorFlag) {
-		Objects[i]._oAnimFlag = true;
-		Objects[i]._oSelFlag = 0;
+		armorStand._oAnimFlag = true;
+		armorStand._oSelFlag = 0;
 	}
 
-	Objects[i]._oRndSeed = AdvanceRndSeed();
+	armorStand._oRndSeed = AdvanceRndSeed();
 }
 
-void AddGoatShrine(int i)
+void AddDecapitatedBody(Object &decapitatedBody)
 {
-	Objects[i]._oRndSeed = AdvanceRndSeed();
+	decapitatedBody._oRndSeed = AdvanceRndSeed();
+	decapitatedBody._oAnimFrame = GenerateRnd(8) + 1;
+	decapitatedBody._oPreFlag = true;
 }
 
-void AddCauldron(int i)
-{
-	Objects[i]._oRndSeed = AdvanceRndSeed();
-}
-
-void AddMurkyFountain(int i)
-{
-	int ox = Objects[i].position.x;
-	int oy = Objects[i].position.y;
-	dObject[ox][oy - 1] = -(i + 1);
-	dObject[ox - 1][oy] = -(i + 1);
-	dObject[ox - 1][oy - 1] = -(i + 1);
-	Objects[i]._oRndSeed = AdvanceRndSeed();
-}
-
-void AddTearFountain(int i)
-{
-	Objects[i]._oRndSeed = AdvanceRndSeed();
-}
-
-void AddDecap(int i)
-{
-	Objects[i]._oRndSeed = AdvanceRndSeed();
-	Objects[i]._oAnimFrame = GenerateRnd(8) + 1;
-	Objects[i]._oPreFlag = true;
-}
-
-void AddVilebook(int i)
+void AddBookOfVileness(Object &bookOfVileness)
 {
 	if (setlevel && setlvlnum == SL_VILEBETRAYER) {
-		Objects[i]._oAnimFrame = 4;
+		bookOfVileness._oAnimFrame = 4;
 	}
 }
 
-void AddMagicCircle(int i)
+void AddMagicCircle(Object &magicCircle)
 {
-	Objects[i]._oRndSeed = AdvanceRndSeed();
-	Objects[i]._oPreFlag = true;
-	Objects[i]._oVar6 = 0;
-	Objects[i]._oVar5 = 1;
+	magicCircle._oRndSeed = AdvanceRndSeed();
+	magicCircle._oPreFlag = true;
+	magicCircle._oVar6 = 0;
+	magicCircle._oVar5 = 1;
 }
 
-void AddBrnCross(int i)
+void AddPedestalOfBlood(Object &pedestalOfBlood)
 {
-	Objects[i]._oRndSeed = AdvanceRndSeed();
+	pedestalOfBlood._oVar1 = SetPiece.position.x;
+	pedestalOfBlood._oVar2 = SetPiece.position.y;
+	pedestalOfBlood._oVar3 = SetPiece.position.x + SetPiece.size.width;
+	pedestalOfBlood._oVar4 = SetPiece.position.y + SetPiece.size.height;
+	pedestalOfBlood._oVar6 = 0;
 }
 
-void AddPedistal(int i)
-{
-	Objects[i]._oVar1 = SetPiece.position.x;
-	Objects[i]._oVar2 = SetPiece.position.y;
-	Objects[i]._oVar3 = SetPiece.position.x + SetPiece.size.width;
-	Objects[i]._oVar4 = SetPiece.position.y + SetPiece.size.height;
-	Objects[i]._oVar6 = 0;
-}
-
-void AddStoryBook(int i)
+void AddStoryBook(Object &storyBook)
 {
 	SetRndSeed(glSeedTbl[16]);
 
-	Objects[i]._oVar1 = GenerateRnd(3);
+	storyBook._oVar1 = GenerateRnd(3);
 	if (currlevel == 4)
-		Objects[i]._oVar2 = StoryText[Objects[i]._oVar1][0];
+		storyBook._oVar2 = StoryText[storyBook._oVar1][0];
 	else if (currlevel == 8)
-		Objects[i]._oVar2 = StoryText[Objects[i]._oVar1][1];
+		storyBook._oVar2 = StoryText[storyBook._oVar1][1];
 	else if (currlevel == 12)
-		Objects[i]._oVar2 = StoryText[Objects[i]._oVar1][2];
-	Objects[i]._oVar3 = (currlevel / 4) + 3 * Objects[i]._oVar1 - 1;
-	Objects[i]._oAnimFrame = 5 - 2 * Objects[i]._oVar1;
-	Objects[i]._oVar4 = Objects[i]._oAnimFrame + 1;
+		storyBook._oVar2 = StoryText[storyBook._oVar1][2];
+	storyBook._oVar3 = (currlevel / 4) + 3 * storyBook._oVar1 - 1;
+	storyBook._oAnimFrame = 5 - 2 * storyBook._oVar1;
+	storyBook._oVar4 = storyBook._oAnimFrame + 1;
 }
 
-void AddWeaponRack(int i)
+void AddWeaponRack(Object &weaponRack)
 {
 	if (!weaponFlag) {
-		Objects[i]._oAnimFlag = true;
-		Objects[i]._oSelFlag = 0;
+		weaponRack._oAnimFlag = true;
+		weaponRack._oSelFlag = 0;
 	}
-	Objects[i]._oRndSeed = AdvanceRndSeed();
+	weaponRack._oRndSeed = AdvanceRndSeed();
 }
 
-void AddTorturedBody(int i)
+void AddTorturedBody(Object &torturedBody)
 {
-	Objects[i]._oRndSeed = AdvanceRndSeed();
-	Objects[i]._oAnimFrame = GenerateRnd(4) + 1;
-	Objects[i]._oPreFlag = true;
+	torturedBody._oRndSeed = AdvanceRndSeed();
+	torturedBody._oAnimFrame = GenerateRnd(4) + 1;
+	torturedBody._oPreFlag = true;
 }
 
 void GetRndObjLoc(int randarea, int *xx, int *yy)
@@ -1349,18 +1535,17 @@ void UpdateObjectLight(Object &light, int lightRadius)
 	}
 
 	bool turnon = false;
-	int ox = light.position.x;
-	int oy = light.position.y;
-	int tr = lightRadius + 10;
 	if (!DisableLighting) {
-		for (int p = 0; p < MAX_PLRS && !turnon; p++) {
-			if (Players[p].plractive) {
-				if (Players[p].isOnActiveLevel()) {
-					int dx = abs(Players[p].position.tile.x - ox);
-					int dy = abs(Players[p].position.tile.y - oy);
-					if (dx < tr && dy < tr)
-						turnon = true;
-				}
+		for (const Player &player : Players) {
+			if (!player.plractive)
+				continue;
+
+			if (!player.isOnActiveLevel())
+				continue;
+
+			if (player.position.tile.WalkingDistance(light.position) < lightRadius + 10) {
+				turnon = true;
+				break;
 			}
 		}
 	}
@@ -1422,23 +1607,29 @@ void ObjectStopAnim(Object &object)
 	}
 }
 
+/**
+ * @brief Checks if an open door can be closed
+ *
+ * In order to be able to close a door the space where the closed door would be must be free of bodies, monsters, players, and items
+ *
+ * @param doorPosition Map tile where the door is in its closed position
+ * @return true if the door is free to be closed, false if anything is blocking it
+ */
+inline bool IsDoorClear(const Object &door)
+{
+	return dCorpse[door.position.x][door.position.y] == 0
+	    && dMonster[door.position.x][door.position.y] == 0
+	    && dItem[door.position.x][door.position.y] == 0
+	    && dPlayer[door.position.x][door.position.y] == 0;
+}
+
 void UpdateDoor(Object &door)
 {
-	if (door._oVar4 == 0) {
-		door._oSelFlag = 3;
-		door._oMissFlag = false;
+	if (door._oVar4 == DOOR_CLOSED) {
 		return;
 	}
 
-	int dx = door.position.x;
-	int dy = door.position.y;
-	bool dok = dMonster[dx][dy] == 0;
-	dok = dok && dItem[dx][dy] == 0;
-	dok = dok && dCorpse[dx][dy] == 0;
-	dok = dok && dPlayer[dx][dy] == 0;
-	door._oSelFlag = 2;
-	door._oVar4 = dok ? 1 : 2;
-	door._oMissFlag = true;
+	door._oVar4 = IsDoorClear(door) ? DOOR_OPEN : DOOR_BLOCKED;
 }
 
 void UpdateSarcophagus(Object &sarcophagus)
@@ -1450,12 +1641,12 @@ void UpdateSarcophagus(Object &sarcophagus)
 void ActivateTrapLine(int ttype, int tid)
 {
 	for (int i = 0; i < ActiveObjectCount; i++) {
-		int oi = ActiveObjects[i];
-		if (Objects[oi]._otype == ttype && Objects[oi]._oVar1 == tid) {
-			Objects[oi]._oVar4 = 1;
-			Objects[oi]._oAnimFlag = true;
-			Objects[oi]._oAnimDelay = 1;
-			Objects[oi]._olid = AddLight(Objects[oi].position, 1);
+		Object &trap = Objects[ActiveObjects[i]];
+		if (trap._otype == ttype && trap._oVar1 == tid) {
+			trap._oVar4 = 1;
+			trap._oAnimFlag = true;
+			trap._oAnimDelay = 1;
+			trap._olid = AddLight(trap.position, 1);
 		}
 	}
 }
@@ -1620,527 +1811,57 @@ void ObjL2Special(int x1, int y1, int x2, int y2)
 	}
 }
 
-void DoorSet(Point position, bool isLeftDoor)
+void OpenDoor(Object &door)
 {
-	int pn = dPiece[position.x][position.y];
-	switch (pn) {
-	case 42:
-		ObjSetMicro(position, 391);
-		break;
-	case 44:
-		ObjSetMicro(position, 393);
-		break;
-	case 49:
-		ObjSetMicro(position, isLeftDoor ? 410 : 411);
-		break;
-	case 53:
-		ObjSetMicro(position, 396);
-		break;
-	case 54:
-		ObjSetMicro(position, 397);
-		break;
-	case 60:
-		ObjSetMicro(position, 398);
-		break;
-	case 66:
-		ObjSetMicro(position, 399);
-		break;
-	case 67:
-		ObjSetMicro(position, 400);
-		break;
-	case 68:
-		ObjSetMicro(position, 402);
-		break;
-	case 69:
-		ObjSetMicro(position, 403);
-		break;
-	case 71:
-		ObjSetMicro(position, 405);
-		break;
-	case 211:
-		ObjSetMicro(position, 406);
-		break;
-	case 353:
-		ObjSetMicro(position, 408);
-		break;
-	case 354:
-		ObjSetMicro(position, 409);
-		break;
-	case 410:
-	case 411:
-		ObjSetMicro(position, 395);
-		break;
-	}
+	door._oAnimFrame += 2;
+	SetDoorStateOpen(door);
 }
 
-void CryptDoorSet(Point position, bool isLeftDoor)
+void CloseDoor(Object &door)
 {
-	int pn = dPiece[position.x][position.y];
-	switch (pn) {
-	case 74:
-		ObjSetMicro(position, 203);
-		break;
-	case 78:
-		ObjSetMicro(position, 207);
-		break;
-	case 85:
-		ObjSetMicro(position, isLeftDoor ? 231 : 233);
-		break;
-	case 90:
-		ObjSetMicro(position, 214);
-		break;
-	case 92:
-		ObjSetMicro(position, 217);
-		break;
-	case 98:
-		ObjSetMicro(position, 219);
-		break;
-	case 110:
-		ObjSetMicro(position, 221);
-		break;
-	case 112:
-		ObjSetMicro(position, 223);
-		break;
-	case 114:
-		ObjSetMicro(position, 225);
-		break;
-	case 116:
-		ObjSetMicro(position, 227);
-		break;
-	case 118:
-		ObjSetMicro(position, 229);
-		break;
-	case 231:
-	case 233:
-		ObjSetMicro(position, 211);
-		break;
-	}
+	door._oAnimFrame -= 2;
+	SetDoorStateClosed(door);
 }
 
-/**
- * @brief Checks if an open door can be closed
- *
- * In order to be able to close a door the space where the closed door would be must be free of bodies, monsters, and items
- *
- * @param doorPosition Map tile where the door is in its closed position
- * @return true if the door is free to be closed, false if anything is blocking it
- */
-inline bool IsDoorClear(const Point &doorPosition)
+void OperateDoor(Object &door, bool sendflag)
 {
-	return dCorpse[doorPosition.x][doorPosition.y] == 0
-	    && dMonster[doorPosition.x][doorPosition.y] == 0
-	    && dItem[doorPosition.x][doorPosition.y] == 0;
-}
+	bool isCrypt = IsAnyOf(door._otype, OBJ_L5LDOOR, OBJ_L5RDOOR);
+	bool openDoor = door._oVar4 == DOOR_CLOSED;
 
-void OperateL1RDoor(int oi, bool sendflag)
-{
-	Object &door = Objects[oi];
-
-	if (door._oVar4 == 2) {
-		if (!deltaload)
-			PlaySfxLoc(IS_DOORCLOS, door.position);
+	if (!openDoor && !IsDoorClear(door)) {
+		PlaySfxLoc(isCrypt ? IS_CRCLOS : IS_DOORCLOS, door.position);
+		door._oVar4 = DOOR_BLOCKED;
 		return;
 	}
 
-	if (door._oVar4 == 0) {
-		if (sendflag)
-			NetSendCmdParam1(true, CMD_OPENDOOR, oi);
-		if (!deltaload)
-			PlaySfxLoc(IS_DOOROPEN, door.position);
-		ObjSetMicro(door.position, 394);
-		dSpecial[door.position.x][door.position.y] = 8;
-		door._oAnimFrame += 2;
-		door._oPreFlag = true;
-		DoorSet(door.position + Direction::NorthWest, false);
-		door._oVar4 = 1;
-		door._oSelFlag = 2;
-		RedoPlayerVision();
-		return;
-	}
-
-	if (!deltaload)
-		PlaySfxLoc(IS_DOORCLOS, door.position);
-	if (!deltaload && IsDoorClear(door.position)) {
-		if (sendflag)
-			NetSendCmdParam1(true, CMD_CLOSEDOOR, oi);
-		door._oVar4 = 0;
-		door._oSelFlag = 3;
-		ObjSetMicro(door.position, door._oVar1 - 1);
-
-		// Restore the normal tile where the open door used to be
-		auto openPosition = door.position + Direction::NorthWest;
-		if (door._oVar2 == 50 && dPiece[openPosition.x][openPosition.y] == 395)
-			ObjSetMicro(openPosition, 410);
-		else
-			ObjSetMicro(openPosition, door._oVar2 - 1);
-
-		dSpecial[door.position.x][door.position.y] = 0;
-		door._oAnimFrame -= 2;
-		door._oPreFlag = false;
-		RedoPlayerVision();
+	if (openDoor) {
+		PlaySfxLoc(isCrypt ? IS_CROPEN : IS_DOOROPEN, door.position);
+		OpenDoor(door);
 	} else {
-		door._oVar4 = 2;
-	}
-}
-
-void OperateL1LDoor(int oi, bool sendflag)
-{
-	Object &door = Objects[oi];
-
-	if (door._oVar4 == 2) {
-		if (!deltaload)
-			PlaySfxLoc(IS_DOORCLOS, door.position);
-		return;
+		PlaySfxLoc(isCrypt ? IS_CRCLOS : IS_DOORCLOS, door.position);
+		CloseDoor(door);
 	}
 
-	if (door._oVar4 == 0) {
-		if (sendflag)
-			NetSendCmdParam1(true, CMD_OPENDOOR, oi);
-		if (!deltaload)
-			PlaySfxLoc(IS_DOOROPEN, door.position);
-		if (door._oVar1 == 214)
-			ObjSetMicro(door.position, 407);
-		else
-			ObjSetMicro(door.position, 392);
-		dSpecial[door.position.x][door.position.y] = 7;
-		door._oAnimFrame += 2;
-		door._oPreFlag = true;
-		DoorSet(door.position + Direction::NorthEast, true);
-		door._oVar4 = 1;
-		door._oSelFlag = 2;
-		RedoPlayerVision();
-		return;
-	}
+	RedoPlayerVision();
 
-	if (!deltaload)
-		PlaySfxLoc(IS_DOORCLOS, door.position);
-	if (IsDoorClear(door.position)) {
-		if (sendflag)
-			NetSendCmdParam1(true, CMD_CLOSEDOOR, oi);
-		door._oVar4 = 0;
-		door._oSelFlag = 3;
-		ObjSetMicro(door.position, door._oVar1 - 1);
-
-		// Restore the normal tile where the open door used to be
-		auto openPosition = door.position + Direction::NorthEast;
-		if (door._oVar2 == 50 && dPiece[openPosition.x][openPosition.y] == 395)
-			ObjSetMicro(openPosition, 411);
-		else
-			ObjSetMicro(openPosition, door._oVar2 - 1);
-
-		dSpecial[door.position.x][door.position.y] = 0;
-		door._oAnimFrame -= 2;
-		door._oPreFlag = false;
-		RedoPlayerVision();
-	} else {
-		door._oVar4 = 2;
-	}
-}
-
-void OperateL2RDoor(int oi, bool sendflag)
-{
-	Object &door = Objects[oi];
-
-	if (door._oVar4 == 2) {
-		if (!deltaload)
-			PlaySfxLoc(IS_DOORCLOS, door.position);
-		return;
-	}
-
-	if (door._oVar4 == 0) {
-		if (sendflag)
-			NetSendCmdParam1(true, CMD_OPENDOOR, oi);
-		if (!deltaload)
-			PlaySfxLoc(IS_DOOROPEN, door.position);
-		ObjSetMicro(door.position, 16);
-		dSpecial[door.position.x][door.position.y] = 6;
-		door._oAnimFrame += 2;
-		door._oPreFlag = true;
-		door._oVar4 = 1;
-		door._oSelFlag = 2;
-		RedoPlayerVision();
-		return;
-	}
-
-	if (!deltaload)
-		PlaySfxLoc(IS_DOORCLOS, door.position);
-
-	if (IsDoorClear(door.position)) {
-		if (sendflag)
-			NetSendCmdParam1(true, CMD_CLOSEDOOR, oi);
-		door._oVar4 = 0;
-		door._oSelFlag = 3;
-		ObjSetMicro(door.position, 539);
-		dSpecial[door.position.x][door.position.y] = 0;
-		door._oAnimFrame -= 2;
-		door._oPreFlag = false;
-		RedoPlayerVision();
-	} else {
-		door._oVar4 = 2;
-	}
-}
-
-void OperateL2LDoor(int oi, bool sendflag)
-{
-	Object &door = Objects[oi];
-
-	if (door._oVar4 == 2) {
-		if (!deltaload)
-			PlaySfxLoc(IS_DOORCLOS, door.position);
-		return;
-	}
-
-	if (door._oVar4 == 0) {
-		if (sendflag)
-			NetSendCmdParam1(true, CMD_OPENDOOR, oi);
-		if (!deltaload)
-			PlaySfxLoc(IS_DOOROPEN, door.position);
-		ObjSetMicro(door.position, 12);
-		dSpecial[door.position.x][door.position.y] = 5;
-		door._oAnimFrame += 2;
-		door._oPreFlag = true;
-		door._oVar4 = 1;
-		door._oSelFlag = 2;
-		RedoPlayerVision();
-		return;
-	}
-
-	if (!deltaload)
-		PlaySfxLoc(IS_DOORCLOS, door.position);
-
-	if (IsDoorClear(door.position)) {
-		if (sendflag)
-			NetSendCmdParam1(true, CMD_CLOSEDOOR, oi);
-		door._oVar4 = 0;
-		door._oSelFlag = 3;
-		ObjSetMicro(door.position, 537);
-		dSpecial[door.position.x][door.position.y] = 0;
-		door._oAnimFrame -= 2;
-		door._oPreFlag = false;
-		RedoPlayerVision();
-	} else {
-		door._oVar4 = 2;
-	}
-}
-
-void OperateL3RDoor(int oi, bool sendflag)
-{
-	Object &door = Objects[oi];
-
-	if (door._oVar4 == 2) {
-		if (!deltaload)
-			PlaySfxLoc(IS_DOORCLOS, door.position);
-		return;
-	}
-
-	if (door._oVar4 == 0) {
-		if (sendflag)
-			NetSendCmdParam1(true, CMD_OPENDOOR, oi);
-		if (!deltaload)
-			PlaySfxLoc(IS_DOOROPEN, door.position);
-		ObjSetMicro(door.position, 540);
-		door._oAnimFrame += 2;
-		door._oPreFlag = true;
-		door._oVar4 = 1;
-		door._oSelFlag = 2;
-		RedoPlayerVision();
-		return;
-	}
-
-	if (!deltaload)
-		PlaySfxLoc(IS_DOORCLOS, door.position);
-
-	if (IsDoorClear(door.position)) {
-		if (sendflag)
-			NetSendCmdParam1(true, CMD_CLOSEDOOR, oi);
-		door._oVar4 = 0;
-		door._oSelFlag = 3;
-		ObjSetMicro(door.position, 533);
-		door._oAnimFrame -= 2;
-		door._oPreFlag = false;
-		RedoPlayerVision();
-	} else {
-		door._oVar4 = 2;
-	}
-}
-
-void OperateL3LDoor(int oi, bool sendflag)
-{
-	Object &door = Objects[oi];
-
-	if (door._oVar4 == 2) {
-		if (!deltaload)
-			PlaySfxLoc(IS_DOORCLOS, door.position);
-		return;
-	}
-
-	if (door._oVar4 == 0) {
-		if (sendflag)
-			NetSendCmdParam1(true, CMD_OPENDOOR, oi);
-		if (!deltaload)
-			PlaySfxLoc(IS_DOOROPEN, door.position);
-		ObjSetMicro(door.position, 537);
-		door._oAnimFrame += 2;
-		door._oPreFlag = true;
-		door._oVar4 = 1;
-		door._oSelFlag = 2;
-		RedoPlayerVision();
-		return;
-	}
-
-	if (!deltaload)
-		PlaySfxLoc(IS_DOORCLOS, door.position);
-
-	if (IsDoorClear(door.position)) {
-		if (sendflag)
-			NetSendCmdParam1(true, CMD_CLOSEDOOR, oi);
-		door._oVar4 = 0;
-		door._oSelFlag = 3;
-		ObjSetMicro(door.position, 530);
-		door._oAnimFrame -= 2;
-		door._oPreFlag = false;
-		RedoPlayerVision();
-	} else {
-		door._oVar4 = 2;
-	}
-}
-
-void OperateL5RDoor(int oi, bool sendflag)
-{
-	Object &door = Objects[oi];
-
-	if (door._oVar4 == 2) {
-		if (!deltaload)
-			PlaySfxLoc(IS_DOORCLOS, door.position);
-		return;
-	}
-
-	if (door._oVar4 == 0) {
-		if (sendflag)
-			NetSendCmdParam1(true, CMD_OPENDOOR, oi);
-		if (!deltaload)
-			PlaySfxLoc(IS_CROPEN, door.position);
-		ObjSetMicro(door.position, 208);
-		dSpecial[door.position.x][door.position.y] = 2;
-		door._oAnimFrame += 2;
-		door._oPreFlag = true;
-		CryptDoorSet(door.position + Direction::NorthWest, false);
-		door._oVar4 = 1;
-		door._oSelFlag = 2;
-		RedoPlayerVision();
-		return;
-	}
-
-	if (!deltaload)
-		PlaySfxLoc(IS_CRCLOS, door.position);
-	if (!deltaload && IsDoorClear(door.position)) {
-		if (sendflag)
-			NetSendCmdParam1(true, CMD_CLOSEDOOR, oi);
-		door._oVar4 = 0;
-		door._oSelFlag = 3;
-		ObjSetMicro(door.position, door._oVar1 - 1);
-
-		// Restore the normal tile where the open door used to be
-		auto openPosition = door.position + Direction::NorthWest;
-		if (door._oVar2 == 86 && dPiece[openPosition.x][openPosition.y] == 209)
-			ObjSetMicro(openPosition, 231);
-		else
-			ObjSetMicro(openPosition, door._oVar2 - 1);
-
-		dSpecial[door.position.x][door.position.y] = 0;
-		door._oAnimFrame -= 2;
-		door._oPreFlag = false;
-		RedoPlayerVision();
-	} else {
-		door._oVar4 = 2;
-	}
-}
-
-void OperateL5LDoor(int oi, bool sendflag)
-{
-	Object &door = Objects[oi];
-
-	if (door._oVar4 == 2) {
-		if (!deltaload)
-			PlaySfxLoc(IS_DOORCLOS, door.position);
-		return;
-	}
-
-	if (door._oVar4 == 0) {
-		if (sendflag)
-			NetSendCmdParam1(true, CMD_OPENDOOR, oi);
-		if (!deltaload)
-			PlaySfxLoc(IS_CROPEN, door.position);
-		ObjSetMicro(door.position, 205);
-		dSpecial[door.position.x][door.position.y] = 1;
-		door._oAnimFrame += 2;
-		door._oPreFlag = true;
-		CryptDoorSet(door.position + Direction::NorthEast, true);
-		door._oVar4 = 1;
-		door._oSelFlag = 2;
-		RedoPlayerVision();
-		return;
-	}
-
-	if (!deltaload)
-		PlaySfxLoc(IS_CRCLOS, door.position);
-	if (IsDoorClear(door.position)) {
-		if (sendflag)
-			NetSendCmdParam1(true, CMD_CLOSEDOOR, oi);
-		door._oVar4 = 0;
-		door._oSelFlag = 3;
-		ObjSetMicro(door.position, door._oVar1 - 1);
-
-		// Restore the normal tile where the open door used to be
-		auto openPosition = door.position + Direction::NorthEast;
-		if (door._oVar2 == 86 && dPiece[openPosition.x][openPosition.y] == 209)
-			ObjSetMicro(openPosition, 233);
-		else
-			ObjSetMicro(openPosition, door._oVar2 - 1);
-
-		dSpecial[door.position.x][door.position.y] = 0;
-		door._oAnimFrame -= 2;
-		door._oPreFlag = false;
-		RedoPlayerVision();
-	} else {
-		door._oVar4 = 2;
-	}
-}
-
-void OperateL1Door(const Player &player, int i)
-{
-	int dpx = abs(Objects[i].position.x - player.position.tile.x);
-	int dpy = abs(Objects[i].position.y - player.position.tile.y);
-	if (dpx == 1 && dpy <= 1 && Objects[i]._otype == OBJ_L1LDOOR)
-		OperateL1LDoor(i, true);
-	if (dpx <= 1 && dpy == 1 && Objects[i]._otype == OBJ_L1RDOOR)
-		OperateL1RDoor(i, true);
-}
-
-void OperateL5Door(const Player &player, int i)
-{
-	int dpx = abs(Objects[i].position.x - player.position.tile.x);
-	int dpy = abs(Objects[i].position.y - player.position.tile.y);
-	if (dpx == 1 && dpy <= 1 && Objects[i]._otype == OBJ_L5LDOOR)
-		OperateL5LDoor(i, true);
-	if (dpx <= 1 && dpy == 1 && Objects[i]._otype == OBJ_L5RDOOR)
-		OperateL5RDoor(i, true);
+	if (sendflag)
+		NetSendCmdLoc(MyPlayerId, true, openDoor ? CMD_OPENDOOR : CMD_CLOSEDOOR, door.position);
 }
 
 bool AreAllLeversActivated(int leverId)
 {
 	for (int j = 0; j < ActiveObjectCount; j++) {
-		int oi = ActiveObjects[j];
-		if (Objects[oi]._otype == OBJ_SWITCHSKL
-		    && Objects[oi]._oVar8 == leverId
-		    && Objects[oi]._oSelFlag != 0) {
+		Object &lever = Objects[ActiveObjects[j]];
+		if (lever._otype == OBJ_SWITCHSKL
+		    && lever._oVar8 == leverId
+		    && lever._oSelFlag != 0) {
 			return false;
 		}
 	}
 	return true;
 }
 
-void DeltaOperateLever(Object &object)
+void UpdateLeverState(Object &object)
 {
 	if (object._oSelFlag == 0) {
 		return;
@@ -2161,16 +1882,15 @@ void DeltaOperateLever(Object &object)
 	ObjChangeMap(object._oVar1, object._oVar2, object._oVar3, object._oVar4);
 }
 
-void OperateLever(int i, bool sendmsg)
+void OperateLever(Object &object, bool sendmsg)
 {
-	Object &object = Objects[i];
 	if (object._oSelFlag == 0) {
 		return;
 	}
 
 	PlaySfxLoc(IS_LEVER, object.position);
 
-	DeltaOperateLever(object);
+	UpdateLeverState(object);
 
 	if (currlevel == 24) {
 		PlaySfxLoc(IS_CROPEN, { UberRow, UberCol });
@@ -2178,7 +1898,7 @@ void OperateLever(int i, bool sendmsg)
 	}
 
 	if (sendmsg)
-		NetSendCmdParam1(false, CMD_OPERATEOBJ, i);
+		NetSendCmdLoc(MyPlayerId, false, CMD_OPERATEOBJ, object.position);
 }
 
 void OperateBook(Player &player, Object &book)
@@ -2187,14 +1907,7 @@ void OperateBook(Player &player, Object &book)
 		return;
 	}
 
-	book._oSelFlag = 0;
-	book._oAnimFrame++;
-
-	if (!setlevel) {
-		return;
-	}
-
-	if (setlvlnum == SL_VILEBETRAYER) {
+	if (setlevel && setlvlnum == SL_VILEBETRAYER) {
 		bool missileAdded = false;
 		for (int j = 0; j < ActiveObjectCount; j++) {
 			Object &questObject = Objects[ActiveObjects[j]];
@@ -2213,7 +1926,7 @@ void OperateBook(Player &player, Object &book)
 
 			if (doAddMissile) {
 				questObject._oVar6 = 4;
-				ObjectAtPosition({ 35, 36 })->_oVar5++;
+				ObjectAtPosition({ 35, 36 })._oVar5++;
 				AddMissile(player.position.tile, target, Direction::South, MIS_RNDTELEPORT, TARGET_BOTH, player.getId(), 0, 0);
 				missileAdded = true;
 			}
@@ -2221,6 +1934,13 @@ void OperateBook(Player &player, Object &book)
 		if (!missileAdded) {
 			return;
 		}
+	}
+
+	book._oSelFlag = 0;
+	book._oAnimFrame++;
+
+	if (!setlevel) {
+		return;
 	}
 
 	if (setlvlnum == SL_BONECHAMB) {
@@ -2251,43 +1971,43 @@ void OperateBook(Player &player, Object &book)
 	}
 }
 
-void OperateBookLever(int i, bool sendmsg)
+void OperateBookLever(Object &questBook, bool sendmsg)
 {
 	if (ActiveItemCount >= MAXITEMS) {
 		return;
 	}
-	if (Objects[i]._oSelFlag != 0 && !qtextflag) {
-		if (Objects[i]._otype == OBJ_BLINDBOOK && Quests[Q_BLIND]._qvar1 == 0) {
+	if (questBook._oSelFlag != 0 && !qtextflag) {
+		if (questBook._otype == OBJ_BLINDBOOK && Quests[Q_BLIND]._qvar1 == 0) {
 			Quests[Q_BLIND]._qactive = QUEST_ACTIVE;
 			Quests[Q_BLIND]._qlog = true;
 			Quests[Q_BLIND]._qvar1 = 1;
 		}
-		if (Objects[i]._otype == OBJ_BLOODBOOK && Quests[Q_BLOOD]._qvar1 == 0) {
+		if (questBook._otype == OBJ_BLOODBOOK && Quests[Q_BLOOD]._qvar1 == 0) {
 			Quests[Q_BLOOD]._qactive = QUEST_ACTIVE;
 			Quests[Q_BLOOD]._qlog = true;
 			Quests[Q_BLOOD]._qvar1 = 1;
 			SpawnQuestItem(IDI_BLDSTONE, SetPiece.position.megaToWorld() + Displacement { 9, 17 }, 0, 1);
 		}
-		if (Objects[i]._otype == OBJ_STEELTOME && Quests[Q_WARLORD]._qvar1 == 0) {
+		if (questBook._otype == OBJ_STEELTOME && Quests[Q_WARLORD]._qvar1 == 0) {
 			Quests[Q_WARLORD]._qactive = QUEST_ACTIVE;
 			Quests[Q_WARLORD]._qlog = true;
 			Quests[Q_WARLORD]._qvar1 = 1;
 		}
-		if (Objects[i]._oAnimFrame != Objects[i]._oVar6) {
-			if (Objects[i]._otype != OBJ_BLOODBOOK)
-				ObjChangeMap(Objects[i]._oVar1, Objects[i]._oVar2, Objects[i]._oVar3, Objects[i]._oVar4);
-			if (Objects[i]._otype == OBJ_BLINDBOOK) {
+		if (questBook._oAnimFrame != questBook._oVar6) {
+			if (questBook._otype != OBJ_BLOODBOOK)
+				ObjChangeMap(questBook._oVar1, questBook._oVar2, questBook._oVar3, questBook._oVar4);
+			if (questBook._otype == OBJ_BLINDBOOK) {
 				SpawnUnique(UITEM_OPTAMULET, SetPiece.position.megaToWorld() + Displacement { 5, 5 });
 				auto tren = TransVal;
 				TransVal = 9;
-				DRLG_MRectTrans({ Objects[i]._oVar1, Objects[i]._oVar2 }, { Objects[i]._oVar3, Objects[i]._oVar4 });
+				DRLG_MRectTrans({ questBook._oVar1, questBook._oVar2 }, { questBook._oVar3, questBook._oVar4 });
 				TransVal = tren;
 			}
 		}
-		Objects[i]._oAnimFrame = Objects[i]._oVar6;
-		InitQTextMsg(Objects[i].bookMessage);
+		questBook._oAnimFrame = questBook._oVar6;
+		InitQTextMsg(questBook.bookMessage);
 		if (sendmsg)
-			NetSendCmdParam1(false, CMD_OPERATEOBJ, i);
+			NetSendCmdLoc(MyPlayerId, false, CMD_OPERATEOBJ, questBook.position);
 	}
 }
 
@@ -2334,32 +2054,32 @@ void OperateChamberOfBoneBook(Object &questBook)
 	InitQTextMsg(textdef);
 }
 
-void OperateChest(const Player &player, int i, bool sendmsg)
+void OperateChest(const Player &player, Object &chest, bool sendLootMsg)
 {
-	if (Objects[i]._oSelFlag == 0) {
+	if (chest._oSelFlag == 0) {
 		return;
 	}
 
-	PlaySfxLoc(IS_CHEST, Objects[i].position);
-	Objects[i]._oSelFlag = 0;
-	Objects[i]._oAnimFrame += 2;
-	SetRndSeed(Objects[i]._oRndSeed);
+	PlaySfxLoc(IS_CHEST, chest.position);
+	chest._oSelFlag = 0;
+	chest._oAnimFrame += 2;
+	SetRndSeed(chest._oRndSeed);
 	if (setlevel) {
-		for (int j = 0; j < Objects[i]._oVar1; j++) {
-			CreateRndItem(Objects[i].position, true, sendmsg, false);
+		for (int j = 0; j < chest._oVar1; j++) {
+			CreateRndItem(chest.position, true, sendLootMsg, false);
 		}
 	} else {
-		for (int j = 0; j < Objects[i]._oVar1; j++) {
-			if (Objects[i]._oVar2 != 0)
-				CreateRndItem(Objects[i].position, false, sendmsg, false);
+		for (int j = 0; j < chest._oVar1; j++) {
+			if (chest._oVar2 != 0)
+				CreateRndItem(chest.position, false, sendLootMsg, false);
 			else
-				CreateRndUseful(Objects[i].position, sendmsg);
+				CreateRndUseful(chest.position, sendLootMsg);
 		}
 	}
-	if (Objects[i].IsTrappedChest()) {
-		Direction mdir = GetDirection(Objects[i].position, player.position.tile);
+	if (chest.IsTrappedChest()) {
+		Direction mdir = GetDirection(chest.position, player.position.tile);
 		missile_id mtype;
-		switch (Objects[i]._oVar4) {
+		switch (chest._oVar4) {
 		case 0:
 			mtype = MIS_ARROW;
 			break;
@@ -2381,11 +2101,11 @@ void OperateChest(const Player &player, int i, bool sendmsg)
 		default:
 			mtype = MIS_ARROW;
 		}
-		AddMissile(Objects[i].position, player.position.tile, mdir, mtype, TARGET_PLAYERS, -1, 0, 0);
-		Objects[i]._oTrapFlag = false;
+		AddMissile(chest.position, player.position.tile, mdir, mtype, TARGET_PLAYERS, -1, 0, 0);
+		chest._oTrapFlag = false;
 	}
 	if (&player == MyPlayer)
-		NetSendCmdParam1(false, CMD_PLROPOBJ, i);
+		NetSendCmdLoc(MyPlayerId, false, CMD_OPERATEOBJ, chest.position);
 }
 
 void OperateMushroomPatch(const Player &player, Object &mushroomPatch)
@@ -2461,7 +2181,7 @@ void OperateSlainHero(const Player &player, Object &corpse)
 	}
 	MyPlayer->Say(HeroSpeech::RestInPeaceMyFriend);
 	if (&player == MyPlayer)
-		NetSendCmdParam1(false, CMD_OPERATEOBJ, corpse.GetId());
+		NetSendCmdLoc(MyPlayerId, false, CMD_OPERATEOBJ, corpse.position);
 }
 
 void OperateTrapLever(Object &flameLever)
@@ -2508,27 +2228,7 @@ void OperateSarcophagus(Object &sarcophagus, bool sendMsg, bool sendLootMsg)
 	if (sarcophagus._oVar1 >= 8 && sarcophagus._oVar2 >= 0)
 		ActivateSkeleton(Monsters[sarcophagus._oVar2], sarcophagus.position);
 	if (sendMsg)
-		NetSendCmdParam1(false, CMD_OPERATEOBJ, sarcophagus.GetId());
-}
-
-void OperateL2Door(const Player &player, int i)
-{
-	int dpx = abs(Objects[i].position.x - player.position.tile.x);
-	int dpy = abs(Objects[i].position.y - player.position.tile.y);
-	if (dpx == 1 && dpy <= 1 && Objects[i]._otype == OBJ_L2LDOOR)
-		OperateL2LDoor(i, true);
-	if (dpx <= 1 && dpy == 1 && Objects[i]._otype == OBJ_L2RDOOR)
-		OperateL2RDoor(i, true);
-}
-
-void OperateL3Door(const Player &player, int i)
-{
-	int dpx = abs(Objects[i].position.x - player.position.tile.x);
-	int dpy = abs(Objects[i].position.y - player.position.tile.y);
-	if (dpx == 1 && dpy <= 1 && Objects[i]._otype == OBJ_L3RDOOR)
-		OperateL3RDoor(i, true);
-	if (dpx <= 1 && dpy == 1 && Objects[i]._otype == OBJ_L3LDOOR)
-		OperateL3LDoor(i, true);
+		NetSendCmdLoc(MyPlayerId, false, CMD_OPERATEOBJ, sarcophagus.position);
 }
 
 void OperatePedestal(Player &player, Object &pedestal)
@@ -2788,12 +2488,11 @@ void OperateShrineEnchanted(Player &player)
 void OperateShrineThaumaturgic(const Player &player)
 {
 	for (int j = 0; j < ActiveObjectCount; j++) {
-		int v1 = ActiveObjects[j];
-		assert(v1 >= 0 && v1 < MAXOBJECTS);
-		if (Objects[v1].IsChest() && Objects[v1]._oSelFlag == 0) {
-			Objects[v1]._oRndSeed = AdvanceRndSeed();
-			Objects[v1]._oSelFlag = 1;
-			Objects[v1]._oAnimFrame -= 2;
+		Object &object = Objects[ActiveObjects[j]];
+		if (object.IsChest() && object._oSelFlag == 0) {
+			object._oRndSeed = AdvanceRndSeed();
+			object._oSelFlag = 1;
+			object._oAnimFrame -= 2;
 		}
 	}
 
@@ -3391,7 +3090,7 @@ void OperateShrine(Player &player, Object &shrine, _sfx_id sType)
 	}
 
 	if (&player == MyPlayer)
-		NetSendCmdParam1(false, CMD_PLROPOBJ, shrine.GetId());
+		NetSendCmdLoc(MyPlayerId, false, CMD_OPERATEOBJ, shrine.position);
 }
 
 void OperateBookStand(Object &bookStand, bool sendmsg, bool sendLootMsg)
@@ -3409,7 +3108,7 @@ void OperateBookStand(Object &bookStand, bool sendmsg, bool sendLootMsg)
 	else
 		CreateTypeItem(bookStand.position, false, ItemType::Misc, IMISC_SCROLL, sendLootMsg, false);
 	if (sendmsg)
-		NetSendCmdParam1(false, CMD_OPERATEOBJ, bookStand.GetId());
+		NetSendCmdLoc(MyPlayerId, false, CMD_OPERATEOBJ, bookStand.position);
 }
 
 void OperateBookcase(Object &bookcase, bool sendmsg, bool sendLootMsg)
@@ -3437,7 +3136,7 @@ void OperateBookcase(Object &bookcase, bool sendmsg, bool sendLootMsg)
 		}
 	}
 	if (sendmsg)
-		NetSendCmdParam1(false, CMD_OPERATEOBJ, bookcase.GetId());
+		NetSendCmdLoc(MyPlayerId, false, CMD_OPERATEOBJ, bookcase.position);
 }
 
 void OperateDecapitatedBody(Object &corpse, bool sendmsg, bool sendLootMsg)
@@ -3449,7 +3148,7 @@ void OperateDecapitatedBody(Object &corpse, bool sendmsg, bool sendLootMsg)
 	SetRndSeed(corpse._oRndSeed);
 	CreateRndItem(corpse.position, false, sendLootMsg, false);
 	if (sendmsg)
-		NetSendCmdParam1(false, CMD_OPERATEOBJ, corpse.GetId());
+		NetSendCmdLoc(MyPlayerId, false, CMD_OPERATEOBJ, corpse.position);
 }
 
 void OperateArmorStand(Object &armorStand, bool sendmsg, bool sendLootMsg)
@@ -3471,7 +3170,7 @@ void OperateArmorStand(Object &armorStand, bool sendmsg, bool sendLootMsg)
 		CreateTypeItem(armorStand.position, true, ItemType::HeavyArmor, IMISC_NONE, sendLootMsg, false);
 	}
 	if (sendmsg)
-		NetSendCmdParam1(false, CMD_OPERATEOBJ, armorStand.GetId());
+		NetSendCmdLoc(MyPlayerId, false, CMD_OPERATEOBJ, armorStand.position);
 }
 
 int FindValidShrine()
@@ -3561,7 +3260,7 @@ bool OperateFountains(Player &player, Object &fountain)
 		    2 * leveltype);
 		applied = true;
 		if (&player == MyPlayer)
-			NetSendCmdParam1(false, CMD_OPERATEOBJ, fountain.GetId());
+			NetSendCmdLoc(MyPlayerId, false, CMD_OPERATEOBJ, fountain.position);
 		break;
 	case OBJ_TEARFTN: {
 		if (fountain._oSelFlag == 0)
@@ -3598,7 +3297,7 @@ bool OperateFountains(Player &player, Object &fountain)
 		CheckStats(player);
 		applied = true;
 		if (&player == MyPlayer)
-			NetSendCmdParam1(false, CMD_OPERATEOBJ, fountain.GetId());
+			NetSendCmdLoc(MyPlayerId, false, CMD_OPERATEOBJ, fountain.position);
 	} break;
 	default:
 		break;
@@ -3621,7 +3320,7 @@ void OperateWeaponRack(Object &weaponRack, bool sendmsg, bool sendLootMsg)
 	CreateTypeItem(weaponRack.position, leveltype != DTYPE_CATHEDRAL, weaponType, IMISC_NONE, sendLootMsg, false);
 
 	if (sendmsg)
-		NetSendCmdParam1(false, CMD_OPERATEOBJ, weaponRack.GetId());
+		NetSendCmdLoc(MyPlayerId, false, CMD_OPERATEOBJ, weaponRack.position);
 }
 
 /**
@@ -3676,7 +3375,7 @@ void OperateStoryBook(Object &storyBook)
 		Quests[Q_NAKRUL]._qmsg = msg;
 	}
 	InitQTextMsg(msg);
-	NetSendCmdParam1(false, CMD_OPERATEOBJ, storyBook.GetId());
+	NetSendCmdLoc(MyPlayerId, false, CMD_OPERATEOBJ, storyBook.position);
 }
 
 void OperateLazStand(Object &stand)
@@ -3693,70 +3392,6 @@ void OperateLazStand(Object &stand)
 	stand._oSelFlag = 0;
 	Point pos = GetSuperItemLoc(stand.position);
 	SpawnQuestItem(IDI_LAZSTAFF, pos, 0, 0);
-}
-
-void SyncOpL1Door(int cmd, int i)
-{
-	bool doSync = false;
-	if (cmd == CMD_OPENDOOR && Objects[i]._oVar4 == 0)
-		doSync = true;
-	if (cmd == CMD_CLOSEDOOR && Objects[i]._oVar4 == 1)
-		doSync = true;
-	if (!doSync)
-		return;
-
-	if (Objects[i]._otype == OBJ_L1LDOOR)
-		OperateL1LDoor(i, false);
-	if (Objects[i]._otype == OBJ_L1RDOOR)
-		OperateL1RDoor(i, false);
-}
-
-void SyncOpL2Door(int cmd, int i)
-{
-	bool doSync = false;
-	if (cmd == CMD_OPENDOOR && Objects[i]._oVar4 == 0)
-		doSync = true;
-	if (cmd == CMD_CLOSEDOOR && Objects[i]._oVar4 == 1)
-		doSync = true;
-	if (!doSync)
-		return;
-
-	if (Objects[i]._otype == OBJ_L2LDOOR)
-		OperateL2LDoor(i, false);
-	if (Objects[i]._otype == OBJ_L2RDOOR)
-		OperateL2RDoor(i, false);
-}
-
-void SyncOpL3Door(int cmd, int i)
-{
-	bool doSync = false;
-	if (cmd == CMD_OPENDOOR && Objects[i]._oVar4 == 0)
-		doSync = true;
-	if (cmd == CMD_CLOSEDOOR && Objects[i]._oVar4 == 1)
-		doSync = true;
-	if (!doSync)
-		return;
-
-	if (Objects[i]._otype == OBJ_L3LDOOR)
-		OperateL3LDoor(i, false);
-	if (Objects[i]._otype == OBJ_L3RDOOR)
-		OperateL3RDoor(i, false);
-}
-
-void SyncOpL5Door(int cmd, int i)
-{
-	bool doSync = false;
-	if (cmd == CMD_OPENDOOR && Objects[i]._oVar4 == 0)
-		doSync = true;
-	if (cmd == CMD_CLOSEDOOR && Objects[i]._oVar4 == 1)
-		doSync = true;
-	if (!doSync)
-		return;
-
-	if (Objects[i]._otype == OBJ_L5LDOOR)
-		OperateL5LDoor(i, false);
-	if (Objects[i]._otype == OBJ_L5RDOOR)
-		OperateL5RDoor(i, false);
 }
 
 /**
@@ -3834,7 +3469,7 @@ void BreakBarrel(const Player &player, Object &barrel, bool forcebreak, bool sen
 					PlayerMHit(dPlayer[xp][yp] - 1, nullptr, 0, 8, 16, MIS_FIREBOLT, false, 0, &unused);
 				}
 				// don't really need to exclude large objects as explosive barrels are single tile objects, but using considerLargeObjects == false as this matches the old logic.
-				Object *adjacentObject = ObjectAtPosition({ xp, yp }, false);
+				Object *adjacentObject = FindObjectAtPosition({ xp, yp }, false);
 				if (adjacentObject != nullptr && adjacentObject->isExplosive() && !adjacentObject->IsBroken()) {
 					BreakBarrel(player, *adjacentObject, true, sendmsg);
 				}
@@ -3906,87 +3541,12 @@ void SyncPedestal(const Object &pedestal, Point origin, int width)
 	}
 }
 
-void SyncL1Doors(Object &door)
+void SyncDoor(Object &door)
 {
-	if (door._oVar4 == 0) {
-		door._oMissFlag = false;
-		return;
-	}
-
-	door._oMissFlag = true;
-	door._oSelFlag = 2;
-
-	bool isLeftDoor = door._otype == _object_id::OBJ_L1LDOOR; // otherwise the door is type OBJ_L1RDOOR
-
-	if (isLeftDoor) {
-		ObjSetMicro(door.position, door._oVar1 == 214 ? 407 : 392);
-		dSpecial[door.position.x][door.position.y] = 7;
-		DoorSet(door.position + Direction::NorthEast, isLeftDoor);
+	if (door._oVar4 == DOOR_CLOSED) {
+		SetDoorStateClosed(door);
 	} else {
-		ObjSetMicro(door.position, 394);
-		dSpecial[door.position.x][door.position.y] = 8;
-		DoorSet(door.position + Direction::NorthWest, isLeftDoor);
-	}
-}
-
-void SyncL2Doors(Object &door)
-{
-	door._oMissFlag = door._oVar4 != 0;
-	door._oSelFlag = 2;
-
-	bool isLeftDoor = door._otype == _object_id::OBJ_L2LDOOR; // otherwise the door is type OBJ_L2RDOOR
-
-	switch (door._oVar4) {
-	case 0:
-		ObjSetMicro(door.position, isLeftDoor ? 537 : 539);
-		dSpecial[door.position.x][door.position.y] = 0;
-		break;
-	case 1:
-	case 2:
-		ObjSetMicro(door.position, isLeftDoor ? 12 : 16);
-		dSpecial[door.position.x][door.position.y] = isLeftDoor ? 5 : 6;
-		break;
-	}
-}
-
-void SyncL3Doors(Object &door)
-{
-	door._oMissFlag = true;
-	door._oSelFlag = 2;
-
-	bool isLeftDoor = door._otype == _object_id::OBJ_L3LDOOR; // otherwise the door is type OBJ_L3RDOOR
-
-	switch (door._oVar4) {
-	case 0:
-		ObjSetMicro(door.position, isLeftDoor ? 530 : 533);
-		break;
-	case 1:
-	case 2:
-		ObjSetMicro(door.position, isLeftDoor ? 537 : 540);
-		break;
-	}
-}
-
-void SyncL5Doors(Object &door)
-{
-	if (door._oVar4 == 0) {
-		door._oMissFlag = false;
-		return;
-	}
-
-	door._oMissFlag = true;
-	door._oSelFlag = 2;
-
-	bool isLeftDoor = door._otype == _object_id::OBJ_L5LDOOR; // otherwise the door is type OBJ_L5RDOOR
-
-	if (isLeftDoor) {
-		ObjSetMicro(door.position, 205);
-		dSpecial[door.position.x][door.position.y] = 1;
-		CryptDoorSet(door.position + Direction::NorthEast, isLeftDoor);
-	} else {
-		ObjSetMicro(door.position, 208);
-		dSpecial[door.position.x][door.position.y] = 2;
-		CryptDoorSet(door.position + Direction::NorthWest, isLeftDoor);
+		SetDoorStateOpen(door);
 	}
 }
 
@@ -4022,7 +3582,7 @@ bool Object::IsDisabled() const
 	return IsAnyOf(static_cast<shrine_type>(_oVar1), shrine_type::ShrineFascinating, shrine_type::ShrineOrnate, shrine_type::ShrineSacred);
 }
 
-Object *ObjectAtPosition(Point position, bool considerLargeObjects)
+Object *FindObjectAtPosition(Point position, bool considerLargeObjects)
 {
 	if (!InDungeonBounds(position)) {
 		return nullptr;
@@ -4040,21 +3600,21 @@ Object *ObjectAtPosition(Point position, bool considerLargeObjects)
 
 bool IsItemBlockingObjectAtPosition(Point position)
 {
-	Object *object = ObjectAtPosition(position);
+	Object *object = FindObjectAtPosition(position);
 	if (object != nullptr && object->_oSolidFlag) {
 		// solid object
 		return true;
 	}
 
-	object = ObjectAtPosition(position + Direction::South);
+	object = FindObjectAtPosition(position + Direction::South);
 	if (object != nullptr && object->_oSelFlag != 0) {
 		// An unopened container or breakable object exists which potentially overlaps this tile, the player might not be able to pick up an item dropped here.
 		return true;
 	}
 
-	object = ObjectAtPosition(position + Direction::SouthEast, false);
+	object = FindObjectAtPosition(position + Direction::SouthEast, false);
 	if (object != nullptr) {
-		Object *otherDoor = ObjectAtPosition(position + Direction::SouthWest, false);
+		Object *otherDoor = FindObjectAtPosition(position + Direction::SouthWest, false);
 		if (otherDoor != nullptr && object->_oSelFlag != 0 && otherDoor->_oSelFlag != 0) {
 			// Two interactive objects potentially overlap both sides of this tile, as above the player might not be able to pick up an item which is dropped here.
 			return true;
@@ -4083,7 +3643,7 @@ void LoadLevelObjects(uint16_t filesWidths[65])
 		ObjFileList[numobjfiles] = static_cast<object_graphic_id>(i);
 		char filestr[32];
 		*BufCopy(filestr, "Objects\\", ObjMasterLoadList[i], ".CEL") = '\0';
-		pObjCels[numobjfiles] = LoadCelAsCl2(filestr, filesWidths[i]).data();
+		pObjCels[numobjfiles] = LoadCel(filestr, filesWidths[i]);
 		numobjfiles++;
 	}
 }
@@ -4124,7 +3684,7 @@ void InitObjectGFX()
 void FreeObjectGFX()
 {
 	for (int i = 0; i < numobjfiles; i++) {
-		pObjCels[i] = nullptr;
+		pObjCels[i] = std::nullopt;
 	}
 	numobjfiles = 0;
 }
@@ -4261,7 +3821,7 @@ void InitObjects()
 					break;
 				}
 				Quests[Q_BLIND]._qmsg = spId;
-				AddBookLever({ SetPiece.position, { SetPiece.size.width + 1, SetPiece.size.height + 1 } }, spId);
+				AddBookLever(OBJ_BLINDBOOK, { SetPiece.position, SetPiece.size + 1 }, spId);
 				LoadMapObjects("Levels\\L2Data\\Blind2.DUN", SetPiece.position.megaToWorld());
 			}
 			if (Quests[Q_BLOOD].IsAvailable()) {
@@ -4287,8 +3847,8 @@ void InitObjects()
 					break;
 				}
 				Quests[Q_BLOOD]._qmsg = spId;
-				AddBookLever({ { SetPiece.position + Displacement { 0, 3 } }, { 2, 4 } }, spId);
-				AddObject(OBJ_PEDISTAL, SetPiece.position.megaToWorld() + Displacement { 9, 16 });
+				AddBookLever(OBJ_BLOODBOOK, { SetPiece.position + Displacement { 0, 3 }, { 2, 4 } }, spId);
+				AddObject(OBJ_PEDESTAL, SetPiece.position.megaToWorld() + Displacement { 9, 16 });
 			}
 			InitRndBarrels();
 		}
@@ -4320,7 +3880,7 @@ void InitObjects()
 					break;
 				}
 				Quests[Q_WARLORD]._qmsg = spId;
-				AddBookLever(SetPiece, spId);
+				AddBookLever(OBJ_STEELTOME, SetPiece, spId);
 				LoadMapObjects("Levels\\L4Data\\Warlord.DUN", SetPiece.position.megaToWorld());
 			}
 			if (Quests[Q_BETRAYER].IsAvailable() && !gbIsMultiplayer)
@@ -4389,10 +3949,10 @@ void SetMapObjects(const uint16_t *dunData, int startx, int starty)
 	ApplyObjectLighting = false;
 }
 
-void AddObject(_object_id objType, Point objPos)
+Object *AddObject(_object_id objType, Point objPos)
 {
 	if (ActiveObjectCount >= MAXOBJECTS)
-		return;
+		return nullptr;
 
 	int oi = AvailableObjects[0];
 	AvailableObjects[0] = AvailableObjects[MAXOBJECTS - 1 - ActiveObjectCount];
@@ -4400,7 +3960,7 @@ void AddObject(_object_id objType, Point objPos)
 	dObject[objPos.x][objPos.y] = oi + 1;
 	Object &object = Objects[oi];
 	SetupObject(object, objPos, objType);
-	switch (objType) {
+	switch (object._otype) {
 	case OBJ_L1LIGHT:
 	case OBJ_SKFIRE:
 	case OBJ_CANDLE1:
@@ -4420,20 +3980,13 @@ void AddObject(_object_id objType, Point objPos)
 		break;
 	case OBJ_L1LDOOR:
 	case OBJ_L1RDOOR:
-		InitializeL1Door(object);
-		break;
 	case OBJ_L2LDOOR:
 	case OBJ_L2RDOOR:
-		// If a catacombs door happens to overlap an arch then clear the arch tile to prevent weird rendering
-		dSpecial[object.position.x][object.position.y] = 0;
-		// intentional fall-through
 	case OBJ_L3LDOOR:
 	case OBJ_L3RDOOR:
-		InitializeMicroDoor(object);
-		break;
 	case OBJ_L5LDOOR:
 	case OBJ_L5RDOOR:
-		InitializeL5Door(object);
+		AddDoor(object);
 		break;
 	case OBJ_BOOK2R:
 		object.InitializeBook({ SetPiece.position, { SetPiece.size.width + 1, SetPiece.size.height + 1 } });
@@ -4441,12 +3994,12 @@ void AddObject(_object_id objType, Point objPos)
 	case OBJ_CHEST1:
 	case OBJ_CHEST2:
 	case OBJ_CHEST3:
-		AddChest(object, objType);
+		AddChest(object);
 		break;
 	case OBJ_TCHEST1:
 	case OBJ_TCHEST2:
 	case OBJ_TCHEST3:
-		AddChest(object, objType);
+		AddChest(object);
 		object._oTrapFlag = true;
 		if (leveltype == DTYPE_CATACOMBS) {
 			object._oVar4 = GenerateRnd(2);
@@ -4456,13 +4009,13 @@ void AddObject(_object_id objType, Point objPos)
 		break;
 	case OBJ_SARC:
 	case OBJ_L5SARC:
-		AddSarc(oi);
+		AddSarcophagus(object);
 		break;
 	case OBJ_FLAMEHOLE:
-		AddFlameTrap(oi);
+		AddFlameTrap(object);
 		break;
 	case OBJ_FLAMELVR:
-		AddFlameLvr(oi);
+		AddFlameLever(object);
 		break;
 	case OBJ_WATER:
 		object._oAnimFrame = 1;
@@ -4481,79 +4034,70 @@ void AddObject(_object_id objType, Point objPos)
 		break;
 	case OBJ_SHRINEL:
 	case OBJ_SHRINER:
-		AddShrine(oi);
+		AddShrine(object);
 		break;
 	case OBJ_BOOKCASEL:
 	case OBJ_BOOKCASER:
-		AddBookcase(oi);
+		AddBookcase(object);
 		break;
 	case OBJ_SKELBOOK:
 	case OBJ_BOOKSTAND:
-		AddBookstand(oi);
-		break;
 	case OBJ_BLOODFTN:
-		AddBloodFtn(oi);
+	case OBJ_GOATSHRINE:
+	case OBJ_CAULDRON:
+	case OBJ_TEARFTN:
+		object._oRndSeed = AdvanceRndSeed();
 		break;
 	case OBJ_DECAP:
-		AddDecap(oi);
+		AddDecapitatedBody(object);
 		break;
 	case OBJ_PURIFYINGFTN:
-		AddPurifyingFountain(oi);
+	case OBJ_MURKYFTN:
+		AddLargeFountain(object);
 		break;
 	case OBJ_ARMORSTAND:
 	case OBJ_WARARMOR:
-		AddArmorStand(oi);
-		break;
-	case OBJ_GOATSHRINE:
-		AddGoatShrine(oi);
-		break;
-	case OBJ_CAULDRON:
-		AddCauldron(oi);
-		break;
-	case OBJ_MURKYFTN:
-		AddMurkyFountain(oi);
-		break;
-	case OBJ_TEARFTN:
-		AddTearFountain(oi);
+		AddArmorStand(object);
 		break;
 	case OBJ_BOOK2L:
-		AddVilebook(oi);
+		AddBookOfVileness(object);
 		break;
 	case OBJ_MCIRCLE1:
 	case OBJ_MCIRCLE2:
-		AddMagicCircle(oi);
+		AddMagicCircle(object);
 		break;
 	case OBJ_STORYBOOK:
 	case OBJ_L5BOOKS:
-		AddStoryBook(oi);
+		AddStoryBook(object);
 		break;
 	case OBJ_BCROSS:
 	case OBJ_TBCROSS:
-		AddBrnCross(oi);
+		object._oRndSeed = AdvanceRndSeed();
 		AddObjectLight(object, 5);
 		break;
-	case OBJ_PEDISTAL:
-		AddPedistal(oi);
+	case OBJ_PEDESTAL:
+		AddPedestalOfBlood(object);
 		break;
 	case OBJ_WARWEAP:
 	case OBJ_WEAPONRACK:
-		AddWeaponRack(oi);
+		AddWeaponRack(object);
 		break;
 	case OBJ_TNUDEM2:
-		AddTorturedBody(oi);
+		AddTorturedBody(object);
 		break;
 	default:
 		break;
 	}
 	ActiveObjectCount++;
+	return &object;
 }
 
-void OperateTrap(Object &trap)
+bool UpdateTrapState(Object &trap)
 {
 	if (trap._oVar4 != 0)
-		return;
+		return false;
 
-	Object &trigger = *ObjectAtPosition({ trap._oVar1, trap._oVar2 });
+	Object &trigger = ObjectAtPosition({ trap._oVar1, trap._oVar2 });
 	switch (trigger._otype) {
 	case OBJ_L1LDOOR:
 	case OBJ_L1RDOOR:
@@ -4563,8 +4107,8 @@ void OperateTrap(Object &trap)
 	case OBJ_L3RDOOR:
 	case OBJ_L5LDOOR:
 	case OBJ_L5RDOOR:
-		if (trigger._oVar4 == 0)
-			return;
+		if (trigger._oVar4 == DOOR_CLOSED)
+			return false;
 		break;
 	case OBJ_LEVER:
 	case OBJ_CHEST1:
@@ -4575,16 +4119,25 @@ void OperateTrap(Object &trap)
 	case OBJ_L5LEVER:
 	case OBJ_L5SARC:
 		if (trigger._oSelFlag != 0)
-			return;
+			return false;
 		break;
 	default:
-		return;
+		return false;
 	}
 
 	trap._oVar4 = 1;
+	trigger._oTrapFlag = false;
+	return true;
+}
+
+void OperateTrap(Object &trap)
+{
+	if (!UpdateTrapState(trap))
+		return;
 
 	// default to firing at the trigger object
-	Point target = trigger.position;
+	Point triggerPosition = { trap._oVar1, trap._oVar2 };
+	Point target = triggerPosition;
 
 	PointsInRectangleRange searchArea { Rectangle { target, 1 } };
 	// look for a player near the trigger (using a reverse search to match vanilla behaviour)
@@ -4596,8 +4149,7 @@ void OperateTrap(Object &trap)
 
 	Direction dir = GetDirection(trap.position, target);
 	AddMissile(trap.position, target, dir, static_cast<missile_id>(trap._oVar3), TARGET_PLAYERS, -1, 0, 0);
-	PlaySfxLoc(IS_TRAP, trigger.position);
-	trigger._oTrapFlag = false;
+	PlaySfxLoc(IS_TRAP, triggerPosition);
 }
 
 void ProcessObjects()
@@ -4702,53 +4254,19 @@ void RedoPlayerVision()
 	}
 }
 
-void MonstCheckDoors(Monster &monster)
+void MonstCheckDoors(const Monster &monster)
 {
-	int mx = monster.position.tile.x;
-	int my = monster.position.tile.y;
-	if (dObject[mx - 1][my - 1] != 0
-	    || dObject[mx][my - 1] != 0
-	    || dObject[mx + 1][my - 1] != 0
-	    || dObject[mx - 1][my] != 0
-	    || dObject[mx + 1][my] != 0
-	    || dObject[mx - 1][my + 1] != 0
-	    || dObject[mx][my + 1] != 0
-	    || dObject[mx + 1][my + 1] != 0) {
-		for (int i = 0; i < ActiveObjectCount; i++) {
-			int oi = ActiveObjects[i];
-			if ((Objects[oi]._otype == OBJ_L1LDOOR || Objects[oi]._otype == OBJ_L1RDOOR) && Objects[oi]._oVar4 == 0) {
-				int dpx = abs(Objects[oi].position.x - mx);
-				int dpy = abs(Objects[oi].position.y - my);
-				if (dpx == 1 && dpy <= 1 && Objects[oi]._otype == OBJ_L1LDOOR)
-					OperateL1LDoor(oi, true);
-				if (dpx <= 1 && dpy == 1 && Objects[oi]._otype == OBJ_L1RDOOR)
-					OperateL1RDoor(oi, true);
-			}
-			if ((Objects[oi]._otype == OBJ_L2LDOOR || Objects[oi]._otype == OBJ_L2RDOOR) && Objects[oi]._oVar4 == 0) {
-				int dpx = abs(Objects[oi].position.x - mx);
-				int dpy = abs(Objects[oi].position.y - my);
-				if (dpx == 1 && dpy <= 1 && Objects[oi]._otype == OBJ_L2LDOOR)
-					OperateL2LDoor(oi, true);
-				if (dpx <= 1 && dpy == 1 && Objects[oi]._otype == OBJ_L2RDOOR)
-					OperateL2RDoor(oi, true);
-			}
-			if ((Objects[oi]._otype == OBJ_L3LDOOR || Objects[oi]._otype == OBJ_L3RDOOR) && Objects[oi]._oVar4 == 0) {
-				int dpx = abs(Objects[oi].position.x - mx);
-				int dpy = abs(Objects[oi].position.y - my);
-				if (dpx == 1 && dpy <= 1 && Objects[oi]._otype == OBJ_L3RDOOR)
-					OperateL3RDoor(oi, true);
-				if (dpx <= 1 && dpy == 1 && Objects[oi]._otype == OBJ_L3LDOOR)
-					OperateL3LDoor(oi, true);
-			}
-			if ((Objects[oi]._otype == OBJ_L5LDOOR || Objects[oi]._otype == OBJ_L5RDOOR) && Objects[oi]._oVar4 == 0) {
-				int dpx = abs(Objects[oi].position.x - mx);
-				int dpy = abs(Objects[oi].position.y - my);
-				if (dpx == 1 && dpy <= 1 && Objects[oi]._otype == OBJ_L5LDOOR)
-					OperateL5LDoor(oi, true);
-				if (dpx <= 1 && dpy == 1 && Objects[oi]._otype == OBJ_L5RDOOR)
-					OperateL5RDoor(oi, true);
-			}
-		}
+	for (Direction dir : { Direction::NorthEast, Direction::SouthWest, Direction::North, Direction::East, Direction::South, Direction::West, Direction::NorthWest, Direction::SouthEast }) {
+		Object *object = FindObjectAtPosition(monster.position.tile + dir);
+		if (object == nullptr)
+			continue;
+
+		Object &door = *object;
+		// Doors use _oVar4 to track open/closed state, non-zero values indicate an open door
+		if (!door.isDoor() || door._oVar4 != DOOR_CLOSED)
+			continue;
+
+		OperateDoor(door, true);
 	}
 }
 
@@ -4802,64 +4320,26 @@ int ItemMiscIdIdx(item_misc_id imiscid)
 	return i;
 }
 
-void OperateObject(Player &player, int i, bool teleFlag)
+void OperateObject(Player &player, Object &object)
 {
-	Object &object = Objects[i];
 	bool sendmsg = &player == MyPlayer;
 
 	switch (object._otype) {
 	case OBJ_L1LDOOR:
 	case OBJ_L1RDOOR:
-		if (teleFlag) {
-			if (object._otype == OBJ_L1LDOOR)
-				OperateL1LDoor(i, sendmsg);
-			if (object._otype == OBJ_L1RDOOR)
-				OperateL1RDoor(i, sendmsg);
-			break;
-		}
-		if (sendmsg)
-			OperateL1Door(player, i);
-		break;
 	case OBJ_L2LDOOR:
 	case OBJ_L2RDOOR:
-		if (teleFlag) {
-			if (object._otype == OBJ_L2LDOOR)
-				OperateL2LDoor(i, sendmsg);
-			if (object._otype == OBJ_L2RDOOR)
-				OperateL2RDoor(i, sendmsg);
-			break;
-		}
-		if (sendmsg)
-			OperateL2Door(player, i);
-		break;
 	case OBJ_L3LDOOR:
 	case OBJ_L3RDOOR:
-		if (teleFlag) {
-			if (object._otype == OBJ_L3LDOOR)
-				OperateL3LDoor(i, sendmsg);
-			if (object._otype == OBJ_L3RDOOR)
-				OperateL3RDoor(i, sendmsg);
-			break;
-		}
-		if (sendmsg)
-			OperateL3Door(player, i);
-		break;
 	case OBJ_L5LDOOR:
 	case OBJ_L5RDOOR:
-		if (teleFlag) {
-			if (object._otype == OBJ_L5LDOOR)
-				OperateL5LDoor(i, sendmsg);
-			if (object._otype == OBJ_L5RDOOR)
-				OperateL5RDoor(i, sendmsg);
-			break;
-		}
 		if (sendmsg)
-			OperateL5Door(player, i);
+			OperateDoor(object, sendmsg);
 		break;
 	case OBJ_LEVER:
 	case OBJ_L5LEVER:
 	case OBJ_SWITCHSKL:
-		OperateLever(i, sendmsg);
+		OperateLever(object, sendmsg);
 		break;
 	case OBJ_BOOK2L:
 		OperateBook(player, object);
@@ -4873,7 +4353,7 @@ void OperateObject(Player &player, int i, bool teleFlag)
 	case OBJ_TCHEST1:
 	case OBJ_TCHEST2:
 	case OBJ_TCHEST3:
-		OperateChest(player, i, sendmsg);
+		OperateChest(player, object, sendmsg);
 		break;
 	case OBJ_SARC:
 	case OBJ_L5SARC:
@@ -4885,7 +4365,7 @@ void OperateObject(Player &player, int i, bool teleFlag)
 	case OBJ_BLINDBOOK:
 	case OBJ_BLOODBOOK:
 	case OBJ_STEELTOME:
-		OperateBookLever(i, sendmsg);
+		OperateBookLever(object, sendmsg);
 		break;
 	case OBJ_SHRINEL:
 	case OBJ_SHRINER:
@@ -4923,7 +4403,7 @@ void OperateObject(Player &player, int i, bool teleFlag)
 		if (sendmsg)
 			OperateStoryBook(object);
 		break;
-	case OBJ_PEDISTAL:
+	case OBJ_PEDESTAL:
 		OperatePedestal(player, object);
 		break;
 	case OBJ_WARWEAP:
@@ -4948,31 +4428,23 @@ void OperateObject(Player &player, int i, bool teleFlag)
 	}
 }
 
-void DeltaSyncOpObject(int cmd, int i)
+void DeltaSyncOpObject(Object &object)
 {
-	Object &object = Objects[i];
-
 	switch (object._otype) {
 	case OBJ_L1LDOOR:
 	case OBJ_L1RDOOR:
-		SyncOpL1Door(cmd, i);
-		break;
 	case OBJ_L2LDOOR:
 	case OBJ_L2RDOOR:
-		SyncOpL2Door(cmd, i);
-		break;
 	case OBJ_L3LDOOR:
 	case OBJ_L3RDOOR:
-		SyncOpL3Door(cmd, i);
-		break;
 	case OBJ_L5LDOOR:
 	case OBJ_L5RDOOR:
-		SyncOpL5Door(cmd, i);
+		OpenDoor(object);
 		break;
 	case OBJ_LEVER:
 	case OBJ_L5LEVER:
 	case OBJ_SWITCHSKL:
-		DeltaOperateLever(object);
+		UpdateLeverState(object);
 		break;
 	case OBJ_CHEST1:
 	case OBJ_CHEST2:
@@ -4987,6 +4459,8 @@ void DeltaSyncOpObject(int cmd, int i)
 	case OBJ_SARC:
 	case OBJ_L5SARC:
 	case OBJ_GOATSHRINE:
+	case OBJ_SHRINEL:
+	case OBJ_SHRINER:
 		UpdateState(object, object._oAnimLen);
 		break;
 	case OBJ_BLINDBOOK:
@@ -5028,36 +4502,31 @@ void DeltaSyncOpObject(int cmd, int i)
 	}
 }
 
-void SyncOpObject(Player &player, int cmd, int i)
+void SyncOpObject(Player &player, int cmd, Object &object)
 {
-	Object &object = Objects[i];
 	bool sendmsg = &player == MyPlayer;
 
 	switch (object._otype) {
 	case OBJ_L1LDOOR:
 	case OBJ_L1RDOOR:
-		if (!sendmsg)
-			SyncOpL1Door(cmd, i);
-		break;
 	case OBJ_L2LDOOR:
 	case OBJ_L2RDOOR:
-		if (!sendmsg)
-			SyncOpL2Door(cmd, i);
-		break;
 	case OBJ_L3LDOOR:
 	case OBJ_L3RDOOR:
-		if (!sendmsg)
-			SyncOpL3Door(cmd, i);
-		break;
 	case OBJ_L5LDOOR:
 	case OBJ_L5RDOOR:
-		if (!sendmsg)
-			SyncOpL5Door(cmd, i);
+		if (sendmsg)
+			break;
+		if (cmd == CMD_CLOSEDOOR && object._oVar4 == DOOR_CLOSED)
+			break;
+		if (cmd == CMD_OPENDOOR && object._oVar4 == DOOR_OPEN)
+			break;
+		OperateDoor(object, false);
 		break;
 	case OBJ_LEVER:
 	case OBJ_L5LEVER:
 	case OBJ_SWITCHSKL:
-		OperateLever(i, sendmsg);
+		OperateLever(object, sendmsg);
 		break;
 	case OBJ_CHEST1:
 	case OBJ_CHEST2:
@@ -5065,7 +4534,7 @@ void SyncOpObject(Player &player, int cmd, int i)
 	case OBJ_TCHEST1:
 	case OBJ_TCHEST2:
 	case OBJ_TCHEST3:
-		OperateChest(player, i, false);
+		OperateChest(player, object, false);
 		break;
 	case OBJ_SARC:
 	case OBJ_L5SARC:
@@ -5074,7 +4543,7 @@ void SyncOpObject(Player &player, int cmd, int i)
 	case OBJ_BLINDBOOK:
 	case OBJ_BLOODBOOK:
 	case OBJ_STEELTOME:
-		OperateBookLever(i, sendmsg);
+		OperateBookLever(object, sendmsg);
 		break;
 	case OBJ_SHRINEL:
 	case OBJ_SHRINER:
@@ -5110,7 +4579,7 @@ void SyncOpObject(Player &player, int cmd, int i)
 		if (sendmsg)
 			OperateStoryBook(object);
 		break;
-	case OBJ_PEDISTAL:
+	case OBJ_PEDESTAL:
 		OperatePedestal(player, object);
 		break;
 	case OBJ_WARWEAP:
@@ -5179,25 +4648,23 @@ void SyncObjectAnim(Object &object)
 
 		const int i = std::distance(std::begin(ObjFileList), found);
 
-		object._oAnimData = pObjCels[i].get();
+		if (pObjCels[i]) {
+			object._oAnimData.emplace(*pObjCels[i]);
+		} else {
+			object._oAnimData = std::nullopt;
+		}
 	}
 
 	switch (object._otype) {
 	case OBJ_L1LDOOR:
 	case OBJ_L1RDOOR:
-		SyncL1Doors(object);
-		break;
 	case OBJ_L2LDOOR:
 	case OBJ_L2RDOOR:
-		SyncL2Doors(object);
-		break;
 	case OBJ_L3LDOOR:
 	case OBJ_L3RDOOR:
-		SyncL3Doors(object);
-		break;
 	case OBJ_L5LDOOR:
 	case OBJ_L5RDOOR:
-		SyncL5Doors(object);
+		SyncDoor(object);
 		break;
 	case OBJ_CRUX1:
 	case OBJ_CRUX2:
@@ -5215,7 +4682,7 @@ void SyncObjectAnim(Object &object)
 	case OBJ_STEELTOME:
 		SyncQSTLever(object);
 		break;
-	case OBJ_PEDISTAL:
+	case OBJ_PEDESTAL:
 		SyncPedestal(object, SetPiece.position, SetPiece.size.width);
 		break;
 	default:
@@ -5244,11 +4711,11 @@ void GetObjectStr(const Object &object)
 	case OBJ_L3RDOOR:
 	case OBJ_L5LDOOR:
 	case OBJ_L5RDOOR:
-		if (object._oVar4 == 1)
+		if (object._oVar4 == DOOR_OPEN)
 			InfoString = _("Open Door");
-		if (object._oVar4 == 0)
+		if (object._oVar4 == DOOR_CLOSED)
 			InfoString = _("Closed Door");
-		if (object._oVar4 == 2)
+		if (object._oVar4 == DOOR_BLOCKED)
 			InfoString = _("Blocked Door");
 		break;
 	case OBJ_BOOK2L:
@@ -5349,7 +4816,7 @@ void GetObjectStr(const Object &object)
 	case OBJ_STEELTOME:
 		InfoString = _("Steel Tome");
 		break;
-	case OBJ_PEDISTAL:
+	case OBJ_PEDESTAL:
 		InfoString = _("Pedestal of Blood");
 		break;
 	case OBJ_STORYBOOK:
@@ -5378,7 +4845,7 @@ void GetObjectStr(const Object &object)
 		}
 	}
 	if (object.IsDisabled()) {
-		InfoString = fmt::format(fmt::runtime(_(/* TRANSLATORS: If user enabled diablo.ini setting "Disable Crippling Shrines" is set to 1; also used for Na-Kruls leaver */ "{:s} (disabled)")), InfoString);
+		InfoString = fmt::format(fmt::runtime(_(/* TRANSLATORS: If user enabled diablo.ini setting "Disable Crippling Shrines" is set to 1; also used for Na-Kruls lever */ "{:s} (disabled)")), InfoString);
 		InfoColor = UiFlags::ColorRed;
 	}
 }
@@ -5389,26 +4856,6 @@ void SyncNakrulRoom()
 	dPiece[UberRow][UberCol - 1] = 300;
 	dPiece[UberRow][UberCol - 2] = 299;
 	dPiece[UberRow][UberCol + 1] = 298;
-}
-
-void AddNakrulLeaver()
-{
-	while (true) {
-		int xp = GenerateRnd(80) + 16;
-		int yp = GenerateRnd(80) + 16;
-		if (RndLocOk(xp - 1, yp - 1)
-		    && RndLocOk(xp, yp - 1)
-		    && RndLocOk(xp + 1, yp - 1)
-		    && RndLocOk(xp - 1, yp)
-		    && RndLocOk(xp, yp)
-		    && RndLocOk(xp + 1, yp)
-		    && RndLocOk(xp - 1, yp + 1)
-		    && RndLocOk(xp, yp + 1)
-		    && RndLocOk(xp + 1, yp + 1)) {
-			break;
-		}
-	}
-	AddObject(OBJ_L5LEVER, { UberRow + 3, UberCol - 1 });
 }
 
 } // namespace devilution

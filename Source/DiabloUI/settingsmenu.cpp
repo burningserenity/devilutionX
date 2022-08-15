@@ -24,7 +24,7 @@ std::vector<std::unique_ptr<UiItemBase>> vecDialog;
 std::vector<OptionEntryBase *> vecOptions;
 OptionEntryBase *selectedOption = nullptr;
 
-enum class ShownMenuType {
+enum class ShownMenuType : uint8_t {
 	Settings,
 	ListOption,
 	KeyInput,
@@ -37,7 +37,7 @@ char optionDescription[512];
 Rectangle rectList;
 Rectangle rectDescription;
 
-enum class SpecialMenuEntry {
+enum class SpecialMenuEntry : int8_t {
 	None = -1,
 	PreviousMenu = -2,
 	UnbindKey = -3,
@@ -263,7 +263,7 @@ void UiSettingsMenu()
 
 		string_view titleText = shownMenu == ShownMenuType::Settings ? _("Settings") : selectedOption->GetName();
 		vecDialog.push_back(std::make_unique<UiArtText>(titleText.data(), MakeSdlRect(uiRectangle.position.x, uiRectangle.position.y + 161, uiRectangle.size.width, 35), UiFlags::FontSize30 | UiFlags::ColorUiSilver | UiFlags::AlignCenter, 8));
-		vecDialog.push_back(std::make_unique<UiScrollbar>(ArtScrollBarBackground->sprite(), ArtScrollBarThumb->sprite(), ArtScrollBarArrow->sheet(), MakeSdlRect(rectList.position.x + rectList.size.width + 5, rectList.position.y, 25, rectList.size.height)));
+		vecDialog.push_back(std::make_unique<UiScrollbar>((*ArtScrollBarBackground)[0], (*ArtScrollBarThumb)[0], *ArtScrollBarArrow, MakeSdlRect(rectList.position.x + rectList.size.width + 5, rectList.position.y, 25, rectList.size.height)));
 		vecDialog.push_back(std::make_unique<UiArtText>(optionDescription, MakeSdlRect(rectDescription), UiFlags::FontSize12 | UiFlags::ColorUiSilverDark | UiFlags::AlignCenter, 1, IsSmallFontTall() ? 22 : 18));
 
 		size_t itemToSelect = 1;

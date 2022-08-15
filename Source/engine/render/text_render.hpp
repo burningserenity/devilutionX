@@ -14,7 +14,7 @@
 
 #include "DiabloUI/ui_flags.hpp"
 #include "engine.h"
-#include "engine/cel_sprite.hpp"
+#include "engine/clx_sprite.hpp"
 #include "engine/rectangle.hpp"
 #include "utils/stdcompat/optional.hpp"
 #include "utils/stdcompat/string_view.hpp"
@@ -56,7 +56,7 @@ enum text_color : uint8_t {
  */
 class DrawStringFormatArg {
 public:
-	enum class Type {
+	enum class Type : uint8_t {
 		StringView,
 		Int
 	};
@@ -123,11 +123,9 @@ private:
  *
  * Also used in the stores and the quest log.
  */
-extern OptionalOwnedCelSprite pSPentSpn2Cels;
+extern OptionalOwnedClxSpriteList pSPentSpn2Cels;
 
 void LoadSmallSelectionSpinner();
-
-void UnloadFonts(GameFontTables size, text_color color);
 
 /**
  * @brief Calculate pixel width of first line of text, respecting kerning

@@ -35,13 +35,14 @@
 namespace devilution {
 
 std::string TestMapPath;
-OptionalOwnedCelSprite pSquareCel;
+OptionalOwnedClxSpriteList pSquareCel;
 bool DebugToggle = false;
 bool DebugGodMode = false;
 bool DebugVision = false;
 bool DebugGrid = false;
 std::unordered_map<int, Point> DebugCoordsMap;
 bool DebugScrollViewEnabled = false;
+std::string debugTRN;
 
 namespace {
 
@@ -93,12 +94,10 @@ void SetSpellLevelCheat(spell_id spl, int spllvl)
 	myPlayer._pSplLvl[spl] = spllvl;
 }
 
-void PrintDebugMonster(int m)
+void PrintDebugMonster(const Monster &monster)
 {
-	auto &monster = Monsters[m];
-
 	EventPlrMsg(StrCat(
-	                "Monster ", m, " = ", monster.name(),
+	                "Monster ", static_cast<int>(monster.getId()), " = ", monster.name(),
 	                "\nX = ", monster.position.tile.x, ", Y = ", monster.position.tile.y,
 	                "\nEnemy = ", monster.enemy, ", HP = ", monster.hitPoints,
 	                "\nMode = ", static_cast<int>(monster.mode), ", Var1 = ", monster.var1),
@@ -107,8 +106,10 @@ void PrintDebugMonster(int m)
 	bool bActive = false;
 
 	for (size_t i = 0; i < ActiveMonsterCount; i++) {
-		if (ActiveMonsters[i] == m)
+		if (&Monsters[ActiveMonsters[i]] == &monster) {
 			bActive = true;
+			break;
+		}
 	}
 
 	EventPlrMsg(StrCat("Active List = ", bActive ? 1 : 0, ", Squelch = ", monster.activeForTicks), UiFlags::ColorWhite);
@@ -116,14 +117,15 @@ void PrintDebugMonster(int m)
 
 void ProcessMessages()
 {
-	tagMSG msg;
-	while (FetchMessage(&msg)) {
-		if (msg.message == DVL_WM_QUIT) {
+	SDL_Event event;
+	uint16_t modState;
+	while (FetchMessage(&event, &modState)) {
+		if (event.type == SDL_QUIT) {
 			gbRunGameResult = false;
 			gbRunGame = false;
 			break;
 		}
-		PushMessage(&msg);
+		HandleMessage(event, modState);
 	}
 }
 
@@ -237,6 +239,11 @@ std::string DebugCmdLoadQuestMap(const string_view parameter)
 		if (!MyPlayer->isOnLevel(quest._qlevel)) {
 			StartNewLvl(*MyPlayer, (quest._qlevel != 21) ? interface_mode::WM_DIABNEXTLVL : interface_mode::WM_DIABTOWNWARP, quest._qlevel);
 			ProcessMessages();
+			// Workaround for SDL_PollEvent:
+			// StartNewLvl pushes a new event with SDL_PushEvent.
+			// ProcessMessages calls SDL_PollEvent but SDL ignores the new pushed event.
+			// Calling SDL_PollEvent again fixes this.
+			ProcessMessages();
 		}
 
 		setlvltype = quest._qlvltype;
@@ -334,7 +341,7 @@ std::string ExportDun(const string_view parameter)
 	for (int y = 16; y < MAXDUNY - 16; y++) {
 		for (int x = 16; x < MAXDUNX - 16; x++) {
 			uint16_t objectId = 0;
-			Object *object = ObjectAtPosition({ x, y }, false);
+			Object *object = FindObjectAtPosition({ x, y }, false);
 			if (object != nullptr) {
 				for (int i = 0; i < 147; i++) {
 					if (ObjTypeConv[i] == object->_otype) {
@@ -948,6 +955,35 @@ std::string DebugCmdToggleFPS(const string_view parameter)
 	return "";
 }
 
+std::string DebugCmdChangeTRN(const string_view parameter)
+{
+	std::stringstream paramsStream(parameter.data());
+	std::string first;
+	std::string out;
+	if (std::getline(paramsStream, first, ' ')) {
+		std::string second;
+		if (std::getline(paramsStream, second, ' ')) {
+			std::string prefix;
+			if (first == "mon") {
+				prefix = "Monsters\\Monsters\\";
+			} else if (first == "plr") {
+				prefix = "PlrGFX\\";
+			}
+			debugTRN = prefix + second + ".TRN";
+		} else {
+			debugTRN = first + ".TRN";
+		}
+		out = fmt::format("I am a pretty butterfly. \n(Loading TRN: {:s})", debugTRN);
+	} else {
+		debugTRN = "";
+		out = "I am a big brown potato.";
+	}
+	auto &player = *MyPlayer;
+	InitPlayerGFX(player);
+	StartStand(player, player._pdir);
+	return out;
+}
+
 std::vector<DebugCmdItem> DebugCmdList = {
 	{ "help", "Prints help overview or help for a specific command.", "({command})", &DebugCmdHelp },
 	{ "give gold", "Fills the inventory with gold.", "", &DebugCmdGiveGoldCheat },
@@ -984,13 +1020,14 @@ std::vector<DebugCmdItem> DebugCmdList = {
 	{ "questinfo", "Shows info of quests.", "{id}", &DebugCmdQuestInfo },
 	{ "playerinfo", "Shows info of player.", "{playerid}", &DebugCmdPlayerInfo },
 	{ "fps", "Toggles displaying FPS", "", &DebugCmdToggleFPS },
+	{ "trn", "Makes player use TRN {trn} - Write 'plr' before it to look in PlrGFX\\ or 'mon' to look in Monsters\\Monsters\\ - example: trn plr infra is equal to 'PlrGFX\\Infra.TRN'", "{trn}", &DebugCmdChangeTRN },
 };
 
 } // namespace
 
 void LoadDebugGFX()
 {
-	pSquareCel = LoadCelAsCl2("Data\\Square.CEL", 64);
+	pSquareCel = LoadCel("Data\\Square.CEL", 64);
 }
 
 void FreeDebugGFX()
@@ -1000,16 +1037,14 @@ void FreeDebugGFX()
 
 void GetDebugMonster()
 {
-	int mi1 = pcursmonst;
-	if (mi1 == -1) {
-		int mi2 = dMonster[cursPosition.x][cursPosition.y];
-		if (mi2 != 0) {
-			mi1 = abs(mi2) - 1;
-		} else {
-			mi1 = DebugMonsterId;
-		}
-	}
-	PrintDebugMonster(mi1);
+	int monsterIndex = pcursmonst;
+	if (monsterIndex == -1)
+		monsterIndex = abs(dMonster[cursPosition.x][cursPosition.y]) - 1;
+
+	if (monsterIndex == -1)
+		monsterIndex = DebugMonsterId;
+
+	PrintDebugMonster(Monsters[monsterIndex]);
 }
 
 void NextDebugMonster()
@@ -1079,7 +1114,7 @@ bool GetDebugGridText(Point dungeonCoords, char *debugGridTextBuffer)
 		return true;
 	case DebugGridTextItem::objectindex: {
 		info = 0;
-		Object *object = ObjectAtPosition(dungeonCoords);
+		Object *object = FindObjectAtPosition(dungeonCoords);
 		if (object != nullptr) {
 			info = static_cast<int>(object->_otype);
 		}

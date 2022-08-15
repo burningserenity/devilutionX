@@ -250,25 +250,22 @@ enum _cmd_id : uint8_t {
 	CMD_GOTOAGETITEM,
 	// Open target door.
 	//
-	// body (TCmdParam1):
-	//    int16_t object_num
+	// body (TCmdLoc):
+	//    int8_t x
+	//    int8_t y
 	CMD_OPENDOOR,
 	// Close target door.
 	//
-	// body (TCmdParam1):
-	//    int16_t object_num
+	// body (TCmdLoc):
+	//    int8_t x
+	//    int8_t y
 	CMD_CLOSEDOOR,
 	// Operate object.
 	//
-	// body (TCmdParam1):
-	//    int16_t object_num
+	// body (TCmdLoc):
+	//    int8_t x
+	//    int8_t y
 	CMD_OPERATEOBJ,
-	// Player operate object.
-	//
-	// body (TCmdParam2):
-	//    int16_t player_num
-	//    int16_t object_num
-	CMD_PLROPOBJ,
 	// Break object.
 	//
 	// body (TCmdLoc):
@@ -710,7 +707,6 @@ struct TBuffer {
 	byte bData[4096];
 };
 
-extern bool deltaload;
 extern uint8_t gbBufferMsgs;
 extern int dwRecCount;
 

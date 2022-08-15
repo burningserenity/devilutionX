@@ -13,7 +13,6 @@ set(libdevilutionx_SRCS
   debug.cpp
   diablo.cpp
   doom.cpp
-  dthread.cpp
   encrypt.cpp
   engine.cpp
   error.cpp
@@ -68,8 +67,6 @@ set(libdevilutionx_SRCS
   controls/modifier_hints.cpp
   controls/plrctrls.cpp
 
-  DiabloUI/art.cpp
-  DiabloUI/art_draw.cpp
   DiabloUI/button.cpp
   DiabloUI/credits.cpp
   DiabloUI/credits_lines.cpp
@@ -95,12 +92,14 @@ set(libdevilutionx_SRCS
   dvlnet/loopback.cpp
   dvlnet/packet.cpp
 
+  engine/actor_position.cpp
   engine/animationinfo.cpp
   engine/assets.cpp
-  engine/demomode.cpp
   engine/direction.cpp
   engine/dx.cpp
   engine/load_cel.cpp
+  engine/load_cl2.cpp
+  engine/load_clx.cpp
   engine/load_pcx.cpp
   engine/palette.cpp
   engine/path.cpp
@@ -109,7 +108,7 @@ set(libdevilutionx_SRCS
   engine/trn.cpp
 
   engine/render/automap_render.cpp
-  engine/render/cl2_render.cpp
+  engine/render/clx_render.cpp
   engine/render/dun_render.cpp
   engine/render/scrollrt.cpp
   engine/render/text_render.cpp
@@ -150,7 +149,8 @@ set(libdevilutionx_SRCS
   storm/storm_net.cpp
   storm/storm_svid.cpp
 
-  utils/cel_to_cl2.cpp
+  utils/cel_to_clx.cpp
+  utils/cl2_to_clx.cpp
   utils/console.cpp
   utils/display.cpp
   utils/file_util.cpp
@@ -159,10 +159,11 @@ set(libdevilutionx_SRCS
   utils/logged_fstream.cpp
   utils/paths.cpp
   utils/pcx.cpp
-  utils/pcx_to_cl2.cpp
+  utils/pcx_to_clx.cpp
   utils/sdl_bilinear_scale.cpp
   utils/sdl_thread.cpp
   utils/str_cat.cpp
+  utils/surface_to_clx.cpp
   utils/utf8.cpp)
 
 if(IOS)
@@ -171,6 +172,10 @@ endif()
 
 if(USE_SDL1)
   list(APPEND libdevilutionx_SRCS utils/sdl2_to_1_2_backports.cpp)
+endif()
+
+if(NOT DISABLE_DEMOMODE)
+  list(APPEND libdevilutionx_SRCS engine/demomode.cpp)
 endif()
 
 if(NOSOUND)

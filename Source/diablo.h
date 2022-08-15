@@ -34,7 +34,7 @@ enum clicktype : int8_t {
 /**
  * @brief Specifices what game logic step is currently executed
  */
-enum class GameLogicStep {
+enum class GameLogicStep : uint8_t {
 	None,
 	ProcessPlayers,
 	ProcessMonsters,
@@ -46,7 +46,7 @@ enum class GameLogicStep {
 	ProcessMissilesTown,
 };
 
-enum class MouseActionType : int {
+enum class MouseActionType : uint8_t {
 	None,
 	Walk,
 	Spell,
@@ -93,7 +93,7 @@ bool diablo_is_focused();
 void diablo_focus_pause();
 void diablo_focus_unpause();
 bool PressEscKey();
-void DisableInputEventHandler(uint32_t uMsg, uint32_t wParam, uint16_t lParam);
+void DisableInputEventHandler(const SDL_Event &event, uint16_t modState);
 void LoadGameLevel(bool firstflag, lvl_entry lvldir);
 
 /**
