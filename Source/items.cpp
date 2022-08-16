@@ -1753,7 +1753,7 @@ void printItemMiscKBM(const Item &item, const bool isOil, const bool isCastOnTar
 	} else if (isCastOnTarget) {
 		AddPanelString(_("Right-click to read, then"));
 		AddPanelString(_("left-click to target"));
-	} else if (IsAnyOf(item._iMiscId, IMISC_BOOK, IMISC_NOTE, IMISC_SCROLL)){
+	} else if (IsAnyOf(item._iMiscId, IMISC_BOOK, IMISC_NOTE, IMISC_SCROLL)) {
 		AddPanelString(_("Right-click to read"));
 	}
 }
@@ -1770,12 +1770,12 @@ void printItemMiscVirtualGamepad(const Item &item, const bool isOil)
 		} else {
 			AddPanelString(_("Activate to use"));
 		}
-	} else if (item._iMiscId == IMISC_SCROLL){
+	} else if (item._iMiscId == IMISC_SCROLL) {
 		AddPanelString(_("Select from spell book, then"));
 		AddPanelString(_("cast to read"));
-        } else {
-          AddPanelString(_("Activate to read"));
-        }
+	} else {
+		AddPanelString(_("Activate to read"));
+	}
 }
 
 void printItemMiscGamepad(const Item &item, const bool isOil, const bool isCastOnTarget, const bool usingDualShock)
@@ -1802,7 +1802,7 @@ void printItemMiscGamepad(const Item &item, const bool isOil, const bool isCastO
 			AddPanelString(_("Square to read"));
 		else
 			AddPanelString(_("X to read"));
-	} else if (IsAnyOf(item._iMiscId, IMISC_BOOK, IMISC_NOTE, IMISC_SCROLL)){
+	} else if (IsAnyOf(item._iMiscId, IMISC_BOOK, IMISC_NOTE, IMISC_SCROLL)) {
 		if (usingDualShock)
 			AddPanelString(_("Triangle to read"));
 		else
@@ -2239,7 +2239,41 @@ int RndItemForMonsterLevel(int8_t monsterLevel)
 	int ril[512];
 
 	int ri = 0;
+
+	int pi = 0;
+
 	for (int i = 0; AllItemsList[i].iLoc != ILOC_INVALID; i++) {
+		const char healingPotions[4] = {
+			ICURS_POTION_OF_HEALING,
+			ICURS_POTION_OF_FULL_HEALING,
+			ICURS_POTION_OF_REJUVENATION,
+			ICURS_POTION_OF_FULL_REJUVENATION
+		};
+
+		const char manaPotions[4] = {
+			ICURS_POTION_OF_MANA,
+			ICURS_POTION_OF_FULL_MANA,
+			ICURS_POTION_OF_REJUVENATION,
+			ICURS_POTION_OF_FULL_REJUVENATION
+		};
+
+		bool isHealingPotion = false;
+		bool isManaPotion = false;
+
+		for (uint64_t j = 0; j < sizeof(healingPotions) / sizeof(healingPotions[0]); j++) {
+			if (AllItemsList[i].iCurs == healingPotions[i]) {
+				isHealingPotion = true;
+				break;
+			}
+		}
+
+		for (uint64_t j = 0; j < sizeof(manaPotions) / sizeof(manaPotions[0]); j++) {
+			if (AllItemsList[i].iCurs == manaPotions[i]) {
+				isManaPotion = true;
+				break;
+			}
+		}
+
 		if (!IsItemAvailable(i))
 			continue;
 
@@ -2257,6 +2291,23 @@ int RndItemForMonsterLevel(int8_t monsterLevel)
 			ri--;
 		if (AllItemsList[i].iSpell == SPL_HEALOTHER && !gbIsMultiplayer)
 			ri--;
+		if (*sgOptions.Gameplay.hpRegen || *sgOptions.Gameplay.manaRegen) {
+			if (isHealingPotion || isManaPotion) {
+				if (*sgOptions.Gameplay.hpRegen && isHealingPotion) {
+					pi++;
+				}
+
+				if (*sgOptions.Gameplay.manaRegen && isManaPotion) {
+					pi++;
+				}
+
+				if (pi > 2)
+					pi = 0;
+
+				if (pi != 2)
+					ri--;
+			}
+		}
 	}
 
 	int r = GenerateRnd(ri);
@@ -3079,89 +3130,7 @@ int RndItem(const Monster &monster)
 	if ((monsterTreasureFlags & T_NODROP) != 0)
 		return 0;
 
-	if (GenerateRnd(100) > 40)
-		return 0;
-
-	if (GenerateRnd(100) > 25)
-		return IDI_GOLD + 1;
-
-	int ril[512];
-
-	int ri = 0;
-
-	int pi = 0;
-
-	for (int i = 0; AllItemsList[i].iLoc != ILOC_INVALID; i++) {
-		const char healingPotions[4] = {
-			ICURS_POTION_OF_HEALING,
-			ICURS_POTION_OF_FULL_HEALING,
-			ICURS_POTION_OF_REJUVENATION,
-			ICURS_POTION_OF_FULL_REJUVENATION
-		};
-
-		const char manaPotions[4] = {
-			ICURS_POTION_OF_MANA,
-			ICURS_POTION_OF_FULL_MANA,
-			ICURS_POTION_OF_REJUVENATION,
-			ICURS_POTION_OF_FULL_REJUVENATION
-		};
-
-		bool isHealingPotion = false;
-		bool isManaPotion = false;
-
-		for (uint64_t j = 0; j < sizeof(healingPotions) / sizeof(healingPotions[0]); j++) {
-			if (AllItemsList[i].iCurs == healingPotions[i]) {
-				isHealingPotion = true;
-				break;
-			}
-		}
-
-		for (uint64_t j = 0; j < sizeof(manaPotions) / sizeof(manaPotions[0]); j++) {
-			if (AllItemsList[i].iCurs == manaPotions[i]) {
-				isManaPotion = true;
-				break;
-			}
-		}
-
-		if (!IsItemAvailable(i))
-			continue;
-
-		if (AllItemsList[i].iRnd == IDROP_DOUBLE && monster.level >= AllItemsList[i].iMinMLvl
-		    && ri < 512) {
-			ril[ri] = i;
-			ri++;
-		}
-		if (AllItemsList[i].iRnd != IDROP_NEVER && monster.level >= AllItemsList[i].iMinMLvl
-		    && ri < 512) {
-			ril[ri] = i;
-			ri++;
-		}
-		if (AllItemsList[i].iSpell == SPL_RESURRECT && !gbIsMultiplayer)
-			ri--;
-		if (AllItemsList[i].iSpell == SPL_HEALOTHER && !gbIsMultiplayer)
-			ri--;
-
-		if (*sgOptions.Gameplay.hpRegen || *sgOptions.Gameplay.manaRegen) {
-			if (isHealingPotion || isManaPotion) {
-				if (*sgOptions.Gameplay.hpRegen && isHealingPotion) {
-					pi++;
-				}
-
-				if (*sgOptions.Gameplay.manaRegen && isManaPotion) {
-					pi++;
-				}
-
-				if (pi > 2)
-					pi = 0;
-
-				if (pi != 2)
-					ri--;
-			}
-		}
-	}
-
-	int r = GenerateRnd(ri);
-	return ril[r] + 1;
+	return RndItemForMonsterLevel(monster.level);
 }
 
 void SpawnUnique(_unique_items uid, Point position)
