@@ -7,6 +7,7 @@
 #include <SDL.h>
 
 #include "controls/controller.h"
+#include "controls/game_controls.h"
 #include "player.h"
 
 namespace devilution {
@@ -23,10 +24,6 @@ enum class ControlTypes : uint8_t {
 	VirtualGamepad,
 };
 
-string_view ControlTypeToString(ControlTypes controlType);
-
-string_view GamepadTypeToString(SDL_GameControllerType gamepadType);
-
 extern ControlTypes ControlMode;
 
 /**
@@ -41,12 +38,7 @@ extern ControlTypes ControlDevice;
 
 extern ControllerButton ControllerButtonHeld;
 
-extern SDL_GameControllerType GamepadType;
-
-struct ControlTypeWithGamepad {
-	ControlTypes controlTypeCoarse;
-	SDL_GameControllerType gamepadType;
-};
+extern GamepadLayout GamepadType;
 
 // Runs every frame.
 // Handles menu movement.

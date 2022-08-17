@@ -1778,35 +1778,35 @@ void printItemMiscVirtualGamepad(const Item &item, const bool isOil)
 	}
 }
 
-void printItemMiscGamepad(const Item &item, const bool isOil, const bool isCastOnTarget, const bool usingDualShock)
+void printItemMiscGamepad(const Item &item, bool isOil, bool isCastOnTarget)
 {
+	std::string activateButton = "Activate";
+	std::string castButton = "Cast";
+
+	if (GamepadType == GamepadLayout::Xbox) {
+		activateButton = "Y";
+		castButton = "X";
+	} else if (GamepadType == GamepadLayout::PlayStation) {
+		activateButton = "Triangle";
+		castButton = "Square";
+	} else if (GamepadType == GamepadLayout::Nintendo) {
+		activateButton = "Y";
+		castButton = "X";
+	}
+
 	if (item._iMiscId == IMISC_MAPOFDOOM) {
-		if (usingDualShock) {
-			AddPanelString(_("Triangle to view"));
-		} else {
-			AddPanelString(_("Y to view"));
-		}
+		AddPanelString(fmt::format(fmt::runtime(_("{} to view")), activateButton));
 	} else if (isOil) {
 		PrintItemOil(item._iMiscId);
 		if (!invflag) {
 			AddPanelString(_("Open inventory to use"));
-
-		} else if (usingDualShock) {
-			AddPanelString(_("Triangle to use"));
 		} else {
-			AddPanelString(_("Y to use"));
+			AddPanelString(fmt::format(fmt::runtime(_("{} to use")), activateButton));
 		}
 	} else if (isCastOnTarget) {
-		AddPanelString(_("Select from spell book, then"));
-		if (usingDualShock)
-			AddPanelString(_("Square to read"));
-		else
-			AddPanelString(_("X to read"));
+		AddPanelString(fmt::format(fmt::runtime(_("Select from spell book, then {} to read")), castButton));
 	} else if (IsAnyOf(item._iMiscId, IMISC_BOOK, IMISC_NOTE, IMISC_SCROLL)) {
-		if (usingDualShock)
-			AddPanelString(_("Triangle to read"));
-		else
-			AddPanelString(_("Y to read"));
+		AddPanelString(fmt::format(fmt::runtime(_("{} to read")), activateButton));
 	}
 }
 
@@ -1830,11 +1830,10 @@ void PrintItemMisc(const Item &item)
 
 	if (ControlMode == ControlTypes::KeyboardAndMouse) {
 		printItemMiscKBM(item, isOil, isCastOnTarget);
-	} else if (ControlMode == ControlTypes::VirtualGamepad || GamepadType == SDL_CONTROLLER_TYPE_VIRTUAL) {
+	} else if (ControlMode == ControlTypes::VirtualGamepad) {
 		printItemMiscVirtualGamepad(item, isOil);
 	} else {
-		const bool usingDualShock = IsAnyOf(GamepadType, SDL_CONTROLLER_TYPE_PS3, SDL_CONTROLLER_TYPE_PS4, SDL_CONTROLLER_TYPE_PS5);
-		printItemMiscGamepad(item, isOil, isCastOnTarget, usingDualShock);
+		printItemMiscGamepad(item, isOil, isCastOnTarget);
 	}
 }
 
