@@ -2044,4 +2044,3 @@ void QuickCast(size_t slot)
 }
 
 } // namespace devilution
-

@@ -221,8 +221,8 @@ endif()
 add_devilutionx_library(libdevilutionx OBJECT ${libdevilutionx_SRCS})
 target_include_directories(libdevilutionx PUBLIC ${CMAKE_CURRENT_BINARY_DIR})
 
-# Use file GENERATE instead of configure_file because configure_file
-# does not support generator expressions.
+#Use file GENERATE instead of configure_file because configure_file
+#does not support generator expressions.
 get_property(is_multi_config GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
 if(is_multi_config)
   set(CONFIG_PATH $<CONFIG>/config.h)
@@ -234,9 +234,21 @@ file(GENERATE OUTPUT ${CONFIG_PATH} CONTENT
 "#pragma once
 #define PROJECT_NAME \"${PROJECT_NAME}\"
 #define PROJECT_VERSION \"${PROJECT_VERSION_WITH_SUFFIX}\"
-#define PROJECT_VERSION_MAJOR ${PROJECT_VERSION_MAJOR}
-#define PROJECT_VERSION_MINOR ${PROJECT_VERSION_MINOR}
-#define PROJECT_VERSION_PATCH ${PROJECT_VERSION_PATCH}
+#define PROJECT_VERSION_MAJOR \
+	$                         \
+	{                         \
+		PROJECT_VERSION_MAJOR \
+	}
+#define PROJECT_VERSION_MINOR \
+	$                         \
+	{                         \
+		PROJECT_VERSION_MINOR \
+	}
+#define PROJECT_VERSION_PATCH \
+	$                         \
+	{                         \
+		PROJECT_VERSION_PATCH \
+	}
 ")
 
 if(DISCORD_INTEGRATION)
