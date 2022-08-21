@@ -1775,6 +1775,17 @@ void Player::CalcScrolls()
 
 void Player::RemoveInvItem(int iv, bool calcScrolls)
 {
+	if (this == MyPlayer) {
+		// Locate the first grid index containing this item and notify remote clients
+		for (size_t i = 0; i < InventoryGridCells; i++) {
+			int8_t itemIndex = InvGrid[i];
+			if (abs(itemIndex) - 1 == iv) {
+				NetSendCmdParam1(false, CMD_DELINVITEMS, i);
+				break;
+			}
+		}
+	}
+
 	// Iterate through invGrid and remove every reference to item
 	for (int8_t &itemIndex : InvGrid) {
 		if (abs(itemIndex) - 1 == iv) {
@@ -1807,6 +1818,10 @@ void Player::RemoveInvItem(int iv, bool calcScrolls)
 
 void Player::RemoveSpdBarItem(int iv)
 {
+	if (this == MyPlayer) {
+		NetSendCmdParam1(false, CMD_DELBELTITEMS, iv);
+	}
+
 	SpdList[iv].clear();
 
 	CalcScrolls();
@@ -2268,7 +2283,7 @@ void LoadPlrGFX(Player &player, player_graphic graphic)
 
 	char prefix[3] = { CharChar[static_cast<std::size_t>(cls)], ArmourChar[player._pgfxnum >> 4], WepChar[static_cast<std::size_t>(animWeaponId)] };
 	char pszName[256];
-	*fmt::format_to(pszName, FMT_COMPILE(R"(PlrGFX\{0}\{1}\{1}{2}.CL2)"), path, string_view(prefix, 3), szCel) = 0;
+	*fmt::format_to(pszName, FMT_COMPILE(R"(plrgfx\{0}\{1}\{1}{2}.cl2)"), path, string_view(prefix, 3), szCel) = 0;
 	const uint16_t animationWidth = GetPlayerSpriteWidth(cls, graphic, animWeaponId);
 	animationData.sprites = LoadCl2Sheet(pszName, animationWidth);
 	std::optional<std::array<uint8_t, 256>> trn = GetClassTRN(player);
