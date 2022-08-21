@@ -1786,8 +1786,8 @@ void printItemMiscGamepad(const Item &item, bool isOil, bool isCastOnTarget)
 		activateButton = "Y";
 		castButton = "X";
 	} else if (GamepadType == GamepadLayout::PlayStation) {
-		activateButton = "Triangle";
-		castButton = "Square";
+		activateButton = "\uE000";
+		castButton = "\uE000";
 	} else if (GamepadType == GamepadLayout::Nintendo) {
 		activateButton = "Y";
 		castButton = "X";
@@ -1803,7 +1803,7 @@ void printItemMiscGamepad(const Item &item, bool isOil, bool isCastOnTarget)
 			AddPanelString(fmt::format(fmt::runtime(_("{} to use")), activateButton));
 		}
 	} else if (isCastOnTarget) {
-		AddPanelString(fmt::format(fmt::runtime(_("Select from spell book, then {} to read")), castButton));
+		AddPanelString(fmt::format(fmt::runtime(_("Select from spell book,\nthen {} the read")), castButton));
 	} else if (IsAnyOf(item._iMiscId, IMISC_BOOK, IMISC_NOTE, IMISC_SCROLL)) {
 		AddPanelString(fmt::format(fmt::runtime(_("{} to read")), activateButton));
 	}
