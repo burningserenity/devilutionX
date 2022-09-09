@@ -43,6 +43,7 @@
 #include "towners.h"
 #include "utils/format_int.hpp"
 #include "utils/language.h"
+#include "utils/log.hpp"
 #include "utils/sdl_geometry.h"
 #include "utils/stdcompat/optional.hpp"
 #include "utils/str_cat.hpp"
@@ -327,7 +328,7 @@ void ResetTalkMsg()
 
 	uint32_t pmask = 0;
 
-	for (int i = 0; i < MAX_PLRS; i++) {
+	for (size_t i = 0; i < Players.size(); i++) {
 		if (WhisperList[i])
 			pmask |= 1 << i;
 	}
@@ -460,10 +461,12 @@ bool IsChatAvailable()
 
 void AddPanelString(string_view str)
 {
+	if (pnumlines >= 4) {
+		Log("AddPanelString failed - not enough lines");
+		return;
+	}
 	CopyUtf8(panelstr[pnumlines], str, sizeof(*panelstr));
-
-	if (pnumlines < 4)
-		pnumlines++;
+	pnumlines++;
 }
 
 void ClearPanel()
@@ -550,12 +553,12 @@ void InitControlPan()
 		LoadCharPanel();
 		LoadSpellIcons();
 		{
-			const OwnedClxSpriteList sprite = LoadCel("CtrlPan\\Panel8.CEL", GetMainPanel().size.width);
+			const OwnedClxSpriteList sprite = LoadCel("ctrlpan\\panel8.cel", GetMainPanel().size.width);
 			ClxDraw(*pBtmBuff, { 0, (GetMainPanel().size.height + 16) - 1 }, sprite[0]);
 		}
 		{
 			const Point bulbsPosition { 0, 87 };
-			const OwnedClxSpriteList statusPanel = LoadCel("CtrlPan\\P8Bulbs.CEL", 88);
+			const OwnedClxSpriteList statusPanel = LoadCel("ctrlpan\\p8bulbs.cel", 88);
 			ClxDraw(*pLifeBuff, bulbsPosition, statusPanel[0]);
 			ClxDraw(*pManaBuff, bulbsPosition, statusPanel[1]);
 		}
@@ -564,11 +567,11 @@ void InitControlPan()
 	if (IsChatAvailable()) {
 		if (!HeadlessMode) {
 			{
-				const OwnedClxSpriteList sprite = LoadCel("CtrlPan\\TalkPanl.CEL", GetMainPanel().size.width);
+				const OwnedClxSpriteList sprite = LoadCel("ctrlpan\\talkpanl.cel", GetMainPanel().size.width);
 				ClxDraw(*pBtmBuff, { 0, (GetMainPanel().size.height + 16) * 2 - 1 }, sprite[0]);
 			}
-			multiButtons = LoadCel("CtrlPan\\P8But2.CEL", 33);
-			talkButtons = LoadCel("CtrlPan\\TalkButt.CEL", 61);
+			multiButtons = LoadCel("ctrlpan\\p8but2.cel", 33);
+			talkButtons = LoadCel("ctrlpan\\talkbutt.cel", 61);
 		}
 		sgbPlrTalkTbl = 0;
 		TalkMessage[0] = '\0';
@@ -581,10 +584,10 @@ void InitControlPan()
 	lvlbtndown = false;
 	if (!HeadlessMode) {
 		LoadMainPanel();
-		pPanelButtons = LoadCel("CtrlPan\\Panel8bu.CEL", 71);
+		pPanelButtons = LoadCel("ctrlpan\\panel8bu.cel", 71);
 
 		static const uint16_t CharButtonsFrameWidths[9] { 95, 41, 41, 41, 41, 41, 41, 41, 41 };
-		pChrButtons = LoadCel("Data\\CharBut.CEL", CharButtonsFrameWidths);
+		pChrButtons = LoadCel("data\\charbut.cel", CharButtonsFrameWidths);
 	}
 	ClearPanBtn();
 	if (!IsChatAvailable())
@@ -592,7 +595,7 @@ void InitControlPan()
 	else
 		PanelButtonIndex = 8;
 	if (!HeadlessMode)
-		pDurIcons = LoadCel("Items\\DurIcons.CEL", 32);
+		pDurIcons = LoadCel("items\\duricons.cel", 32);
 	for (bool &buttonEnabled : chrbtn)
 		buttonEnabled = false;
 	chrbtnactive = false;
@@ -607,8 +610,8 @@ void InitControlPan()
 
 	if (!HeadlessMode) {
 		InitSpellBook();
-		pQLogCel = LoadCel("Data\\Quest.CEL", static_cast<uint16_t>(SidePanelSize.width));
-		pGBoxBuff = LoadCel("CtrlPan\\Golddrop.cel", 261);
+		pQLogCel = LoadCel("data\\quest.cel", static_cast<uint16_t>(SidePanelSize.width));
+		pGBoxBuff = LoadCel("ctrlpan\\golddrop.cel", 261);
 	}
 	CloseGoldDrop();
 	dropGoldValue = 0;
@@ -1151,7 +1154,7 @@ void DrawTalkPan(const Surface &out)
 
 	x += 46;
 	int talkBtn = 0;
-	for (int i = 0; i < 4; i++) {
+	for (size_t i = 0; i < Players.size(); i++) {
 		Player &player = Players[i];
 		if (&player == MyPlayer)
 			continue;
@@ -1218,13 +1221,13 @@ void control_release_talk_btn()
 
 	int off = (MousePosition.y - (69 + mainPanelPosition.y)) / 18;
 
-	int p = 0;
-	for (; p < MAX_PLRS && off != -1; p++) {
-		if (p != MyPlayerId)
+	size_t playerId = 0;
+	for (; playerId < Players.size() && off != -1; ++playerId) {
+		if (playerId != MyPlayerId)
 			off--;
 	}
-	if (p <= MAX_PLRS)
-		WhisperList[p - 1] = !WhisperList[p - 1];
+	if (playerId > 0 && playerId <= Players.size())
+		WhisperList[playerId - 1] = !WhisperList[playerId - 1];
 }
 
 void control_type_message()

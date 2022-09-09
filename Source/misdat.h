@@ -90,13 +90,13 @@ typedef enum missile_graphic_id : uint8_t {
 	MFILE_BONEDEMON,
 	MFILE_EXORA1,
 	MFILE_EXBL3,
-	MFILE_NONE, // BUGFIX: should be `MFILE_NONE = MFILE_SCBSEXPD+1`, i.e. MFILE_NULL, since there would otherwise be an out-of-bounds in SetMissAnim when accessing MissileSpriteData for any of the missiles that have MFILE_NONE as mFileNum in MissileData. (fixed)
+	MFILE_NONE,
 } missile_graphic_id;
 
 /**
  * @brief Specifies what if and how movement distribution is applied
  */
-enum class MissileMovementDistrubution : uint8_t {
+enum class MissileMovementDistribution : uint8_t {
 	/**
 	 * @brief No movement distribution is calculated. Normally this means the missile doesn't move at all.
 	 */
@@ -124,7 +124,7 @@ struct MissileData {
 	uint8_t mFileNum;
 	_sfx_id mlSFX;
 	_sfx_id miSFX;
-	MissileMovementDistrubution MovementDistribution;
+	MissileMovementDistribution MovementDistribution;
 };
 
 enum class MissileDataFlags : uint8_t {

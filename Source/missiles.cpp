@@ -15,6 +15,7 @@
 #include "debug.h"
 #endif
 #include "engine/load_file.hpp"
+#include "engine/points_in_rectangle_range.hpp"
 #include "engine/random.hpp"
 #include "init.h"
 #include "inv.h"
@@ -453,7 +454,7 @@ void CheckMissileCol(Missile &missile, int minDamage, int maxDamage, bool isDama
 		PlaySfxLoc(MissilesData[missile._mitype].miSFX, missile.position.tile);
 }
 
-void MoveMissileAndCheckMissileCol(Missile &missile, int mindam, int maxdam, bool ignoreStart, bool ifCollidesDontMoveToHitTile)
+bool MoveMissile(Missile &missile, const std::function<bool(Point)> &checkTile, bool ifCheckTileFailsDontMoveToTile = false)
 {
 	Point prevTile = missile.position.tile;
 	missile.position.traveled += missile.position.velocity;
@@ -465,16 +466,10 @@ void MoveMissileAndCheckMissileCol(Missile &missile, int mindam, int maxdam, boo
 	else
 		possibleVisitTiles = prevTile.ManhattanDistance(missile.position.tile);
 
-	int16_t tileTargetHash = dMonster[missile.position.tile.x][missile.position.tile.y] ^ dPlayer[missile.position.tile.x][missile.position.tile.y];
+	if (possibleVisitTiles == 0)
+		return false;
 
-	if (possibleVisitTiles == 0) {
-		// missile didn't change the tile... check that we perform CheckMissileCol only once for any monster/player to avoid multiple hits for slow missiles
-		if (missile.lastCollisionTargetHash == tileTargetHash)
-			return;
-	}
-	// remember what target CheckMissileCol was checked against
-	missile.lastCollisionTargetHash = tileTargetHash;
-	// Did the missile skipped a tile?
+	// Did the missile skip a tile?
 	if (possibleVisitTiles > 1) {
 		// Implementation note: If someone knows the correct math to calculate this without this step for step increase loop, I would really appreciate it.
 		auto incVelocity = missile.position.velocity * (0.01f / (float)(possibleVisitTiles - 1));
@@ -483,49 +478,73 @@ void MoveMissileAndCheckMissileCol(Missile &missile, int mindam, int maxdam, boo
 			traveled += incVelocity;
 
 			// calculate in-between tile
-			int mx = traveled.deltaX >> 16;
-			int my = traveled.deltaY >> 16;
-			int dx = (mx + 2 * my) / 64;
-			int dy = (2 * my - mx) / 64;
+			Displacement pixelsTraveled = traveled >> 16;
+			Displacement tileOffset = pixelsTraveled.screenToMissile();
+			Point tile = missile.position.start + tileOffset;
 
-			auto tile = missile.position.start + Displacement { dx, dy };
-
-			// we are at the orginal calculated position => resume with normal logic
+			// we are at the original calculated position => resume with normal logic
 			if (tile == missile.position.tile)
 				break;
 
-			// don't call CheckMissileCol more than once for a tile
+			// don't call checkTile more than once for a tile
 			if (prevTile == tile)
 				continue;
+
 			prevTile = tile;
 
-			CheckMissileCol(missile, mindam, maxdam, false, tile, false);
-
-			// Did missile hit anything?
-			if (missile._mirange != 0)
-				continue;
-
-			if ((missile._miHitFlag && MissilesData[missile._mitype].MovementDistribution == MissileMovementDistrubution::Blockable) || IsMissileBlockedByTile(tile)) {
+			if (!checkTile(tile)) {
 				missile.position.traveled = traveled;
-				if (ifCollidesDontMoveToHitTile && missile._mirange == 0) {
+				if (ifCheckTileFailsDontMoveToTile) {
 					missile.position.traveled -= incVelocity;
 					UpdateMissilePos(missile);
 					missile.position.StopMissile();
 				} else {
 					UpdateMissilePos(missile);
 				}
-				return;
+				return true;
 			}
+
 		} while (true);
 	}
-	if (ignoreStart && missile.position.start == missile.position.tile)
-		return;
-	CheckMissileCol(missile, mindam, maxdam, false, missile.position.tile, false);
-	if (ifCollidesDontMoveToHitTile && missile._mirange == 0) {
+
+	if (!checkTile(missile.position.tile) && ifCheckTileFailsDontMoveToTile) {
 		missile.position.traveled -= missile.position.velocity;
 		UpdateMissilePos(missile);
 		missile.position.StopMissile();
 	}
+
+	return true;
+}
+
+void MoveMissileAndCheckMissileCol(Missile &missile, int mindam, int maxdam, bool ignoreStart, bool ifCollidesDontMoveToHitTile)
+{
+	auto checkTile = [&](Point tile) {
+		if (ignoreStart && missile.position.start == tile)
+			return true;
+
+		CheckMissileCol(missile, mindam, maxdam, false, tile, false);
+
+		// Did missile hit anything?
+		if (missile._mirange != 0)
+			return true;
+
+		if (missile._miHitFlag && MissilesData[missile._mitype].MovementDistribution == MissileMovementDistribution::Blockable)
+			return false;
+
+		return !IsMissileBlockedByTile(tile);
+	};
+
+	bool tileChanged = MoveMissile(missile, checkTile, ifCollidesDontMoveToHitTile);
+
+	int16_t tileTargetHash = dMonster[missile.position.tile.x][missile.position.tile.y] ^ dPlayer[missile.position.tile.x][missile.position.tile.y];
+
+	// missile didn't change the tile... check that we perform CheckMissileCol only once for any monster/player to avoid multiple hits for slow missiles
+	if (!tileChanged && missile.lastCollisionTargetHash != tileTargetHash) {
+		CheckMissileCol(missile, mindam, maxdam, false, missile.position.tile, false);
+	}
+
+	// remember what target CheckMissileCol was checked against
+	missile.lastCollisionTargetHash = tileTargetHash;
 }
 
 void SetMissAnim(Missile &missile, int animtype)
@@ -640,20 +659,24 @@ void SyncPositionWithParent(Missile &missile, const AddMissileParameter &paramet
 void SpawnLightning(Missile &missile, int dam)
 {
 	missile._mirange--;
-	missile.position.traveled += missile.position.velocity;
-	UpdateMissilePos(missile);
+	MoveMissile(
+	    missile, [&](Point tile) {
+		    assert(InDungeonBounds(tile));
+		    int pn = dPiece[tile.x][tile.y];
+		    assert(pn >= 0 && pn <= MAXTILES);
 
-	Point position = missile.position.tile;
-	assert(InDungeonBounds(position));
+		    if (!missile.IsTrap() || tile != missile.position.start) {
+			    if (TileHasAny(pn, TileProperties::BlockMissile)) {
+				    missile._mirange = 0;
+				    return false;
+			    }
+		    }
+
+		    return true;
+	    });
+
+	auto position = missile.position.tile;
 	int pn = dPiece[position.x][position.y];
-	assert(pn >= 0 && pn <= MAXTILES);
-
-	if (!missile.IsTrap() || position != missile.position.start) {
-		if (TileHasAny(pn, TileProperties::BlockMissile)) {
-			missile._mirange = 0;
-		}
-	}
-
 	if (!TileHasAny(pn, TileProperties::BlockMissile)) {
 		if (position != Point { missile.var1, missile.var2 } && InDungeonBounds(position)) {
 			missile_id type = MIS_LIGHTNING;
@@ -725,8 +748,8 @@ void GetDamageAmt(spell_id i, int *mind, int *maxd)
 		*mind = AddClassHealingBonus(myPlayer._pLevel + sl + 1, myPlayer._pClass) - 1;
 		*maxd = AddClassHealingBonus((4 * myPlayer._pLevel) + (6 * sl) + 10, myPlayer._pClass) - 1;
 		break;
-	case SPL_LIGHTNING:
 	case SPL_RUNELIGHT:
+	case SPL_LIGHTNING:
 		*mind = 2;
 		*maxd = 2 + myPlayer._pLevel;
 		break;
@@ -1420,9 +1443,11 @@ void AddRuneExplosion(Missile &missile, const AddMissileParameter & /*parameter*
 
 		missile._midam = dmg;
 
-		constexpr Displacement Offsets[] = { { -1, -1 }, { 0, -1 }, { 1, -1 }, { -1, 0 }, { 0, 0 }, { 1, 0 }, { -1, 1 }, { 0, 1 }, { 1, 1 } };
-		for (Displacement offset : Offsets)
-			CheckMissileCol(missile, dmg, dmg, false, missile.position.tile + offset, true);
+		auto searchArea = PointsInRectangleRangeColMajor {
+			Rectangle { missile.position.tile, 1 }
+		};
+		for (Point position : searchArea)
+			CheckMissileCol(missile, dmg, dmg, false, position, true);
 	}
 	missile._mlid = AddLight(missile.position.start, 8);
 	SetMissDir(missile, 0);
@@ -2659,10 +2684,12 @@ void MI_LArrow(Missile &missile)
 		missile._midist++;
 		if (!missile.IsTrap()) {
 			if (missile._micaster == TARGET_MONSTERS) {
+				// BUGFIX: damage of missile should be encoded in missile struct; player can be dead/have left the game before missile arrives.
 				const Player &player = Players[p];
 				mind = player._pIMinDam;
 				maxd = player._pIMaxDam;
 			} else {
+				// BUGFIX: damage of missile should be encoded in missile struct; monster can be dead before missile arrives.
 				Monster &monster = Monsters[p];
 				mind = monster.minDamage;
 				maxd = monster.maxDamage;
@@ -2689,6 +2716,7 @@ void MI_LArrow(Missile &missile)
 			switch (missile._mitype) {
 			case MIS_LARROW:
 				if (!missile.IsTrap()) {
+					// BUGFIX: damage of missile should be encoded in missile struct; player can be dead/have left the game before missile arrives.
 					const Player &player = Players[p];
 					eMind = player._pILMinDam;
 					eMaxd = player._pILMaxDam;
@@ -2701,6 +2729,7 @@ void MI_LArrow(Missile &missile)
 				break;
 			case MIS_FARROW:
 				if (!missile.IsTrap()) {
+					// BUGFIX: damage of missile should be encoded in missile struct; player can be dead/have left the game before missile arrives.
 					const Player &player = Players[p];
 					eMind = player._pIFMinDam;
 					eMaxd = player._pIFMaxDam;
@@ -2743,11 +2772,13 @@ void MI_Arrow(Missile &missile)
 	int maxd;
 	switch (missile.sourceType()) {
 	case MissileSource::Player: {
+		// BUGFIX: damage of missile should be encoded in missile struct; player can be dead/have left the game before missile arrives.
 		const Player &player = *missile.sourcePlayer();
 		mind = player._pIMinDam;
 		maxd = player._pIMaxDam;
 	} break;
 	case MissileSource::Monster: {
+		// BUGFIX: damage of missile should be encoded in missile struct; monster can be dead before missile arrives.
 		const Monster &monster = *missile.sourceMonster();
 		mind = monster.minDamage;
 		maxd = monster.maxDamage;
@@ -2774,9 +2805,11 @@ void MI_Firebolt(Missile &missile)
 			const Player &player = *missile.sourcePlayer();
 			switch (missile._mitype) {
 			case MIS_FIREBOLT:
+				// BUGFIX: damage of missile should be encoded in missile struct; player can be dead/have left the game before missile arrives.
 				d = GenerateRnd(10) + (player._pMagic / 8) + missile._mispllvl + 1;
 				break;
 			case MIS_FLARE:
+				// BUGFIX: damage of missile should be encoded in missile struct; player can be dead/have left the game before missile arrives.
 				d = 3 * missile._mispllvl - (player._pMagic / 8) + (player._pMagic / 2);
 				break;
 			case MIS_BONESPIRIT:
@@ -2788,6 +2821,7 @@ void MI_Firebolt(Missile &missile)
 		} break;
 		case MissileSource::Monster: {
 			const Monster &monster = *missile.sourceMonster();
+			// BUGFIX: damage of missile should be encoded in missile struct; monster can be dead before missile arrives.
 			d = monster.minDamage + GenerateRnd(monster.maxDamage - monster.minDamage + 1);
 		} break;
 		case MissileSource::Trap:
@@ -2945,8 +2979,18 @@ void MI_Fireball(Missile &missile)
 			const Point missilePosition = missile.position.tile;
 			ChangeLight(missile._mlid, missile.position.tile, missile._miAnimFrame);
 
-			constexpr Displacement Offsets[] = { { 0, 0 }, { 0, 1 }, { 0, -1 }, { 1, 0 }, { 1, -1 }, { 1, 1 }, { -1, 0 }, { -1, 1 }, { -1, -1 } };
-			for (Displacement offset : Offsets) {
+			constexpr Direction Offsets[] = {
+				Direction::NoDirection,
+				Direction::SouthWest,
+				Direction::NorthEast,
+				Direction::SouthEast,
+				Direction::East,
+				Direction::South,
+				Direction::NorthWest,
+				Direction::West,
+				Direction::North
+			};
+			for (Direction offset : Offsets) {
 				if (!CheckBlock(missile.position.start, missilePosition + offset))
 					CheckMissileCol(missile, minDam, maxDam, false, missilePosition + offset, true);
 			}
@@ -3215,8 +3259,10 @@ void MI_Lightctrl(Missile &missile)
 
 	int dam;
 	if (missile.IsTrap()) {
+		// BUGFIX: damage of missile should be encoded in missile struct; monster can be dead before missile arrives.
 		dam = GenerateRnd(currlevel) + 2 * currlevel;
 	} else if (missile._micaster == TARGET_MONSTERS) {
+		// BUGFIX: damage of missile should be encoded in missile struct; player can be dead/have left the game before missile arrives.
 		dam = (GenerateRnd(2) + GenerateRnd(Players[missile._misource]._pLevel) + 2) << 6;
 	} else {
 		auto &monster = Monsters[missile._misource];
@@ -3281,8 +3327,15 @@ void MI_Flash(Missile &missile)
 	}
 	missile._mirange--;
 
-	constexpr Displacement Offsets[] = { { -1, 0 }, { 0, 0 }, { 1, 0 }, { -1, 1 }, { 0, 1 }, { 1, 1 } };
-	for (Displacement offset : Offsets)
+	constexpr Direction Offsets[] = {
+		Direction::NorthWest,
+		Direction::NoDirection,
+		Direction::SouthEast,
+		Direction::West,
+		Direction::SouthWest,
+		Direction::South
+	};
+	for (Direction offset : Offsets)
 		CheckMissileCol(missile, missile._midam, missile._midam, true, missile.position.tile + offset, true);
 
 	if (missile._mirange == 0) {
@@ -3303,8 +3356,12 @@ void MI_Flash2(Missile &missile)
 	}
 	missile._mirange--;
 
-	constexpr Displacement Offsets[] = { { -1, -1 }, { 0, -1 }, { 1, -1 } };
-	for (Displacement offset : Offsets)
+	constexpr Direction Offsets[] = {
+		Direction::North,
+		Direction::North,
+		Direction::East
+	};
+	for (Direction offset : Offsets)
 		CheckMissileCol(missile, missile._midam, missile._midam, true, missile.position.tile + offset, true);
 
 	if (missile._mirange == 0) {
@@ -3452,10 +3509,12 @@ void MI_Weapexp(Missile &missile)
 	int mind;
 	int maxd;
 	if (missile.var2 == 1) {
+		// BUGFIX: damage of missile should be encoded in missile struct; player can be dead/have left the game before missile arrives.
 		mind = player._pIFMinDam;
 		maxd = player._pIFMaxDam;
 		MissilesData[missile._mitype].mResist = MISR_FIRE;
 	} else {
+		// BUGFIX: damage of missile should be encoded in missile struct; player can be dead/have left the game before missile arrives.
 		mind = player._pILMinDam;
 		maxd = player._pILMaxDam;
 		MissilesData[missile._mitype].mResist = MISR_LIGHTNING;
@@ -3890,8 +3949,18 @@ void MI_Element(Missile &missile)
 		ChangeLight(missile._mlid, missile.position.tile, missile._miAnimFrame);
 
 		Point startPoint = missile.var3 == 2 ? Point { missile.var4, missile.var5 } : Point(missile.position.start);
-		constexpr Displacement Offsets[] = { { 0, 0 }, { 0, 1 }, { 0, -1 }, { 1, 0 }, { 1, -1 }, { 1, 1 }, { -1, 0 }, { -1, 1 }, { -1, -1 } };
-		for (Displacement offset : Offsets) {
+		constexpr Direction Offsets[] = {
+			Direction::NoDirection,
+			Direction::SouthWest,
+			Direction::NorthEast,
+			Direction::SouthEast,
+			Direction::East,
+			Direction::South,
+			Direction::NorthWest,
+			Direction::West,
+			Direction::North
+		};
+		for (Direction offset : Offsets) {
 			if (!CheckBlock(startPoint, missilePosition + offset))
 				CheckMissileCol(missile, dam, dam, true, missilePosition + offset, true);
 		}

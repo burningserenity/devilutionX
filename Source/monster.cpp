@@ -97,7 +97,7 @@ size_t GetNumAnims(const MonsterData &monsterData)
 void InitMonsterTRN(CMonster &monst)
 {
 	char path[64];
-	*BufCopy(path, "Monsters\\", monst.data->trnFile, ".TRN") = '\0';
+	*BufCopy(path, "monsters\\", monst.data->trnFile, ".trn") = '\0';
 	std::array<uint8_t, 256> colorTranslations;
 	LoadFileInMem(path, colorTranslations);
 	std::replace(colorTranslations.begin(), colorTranslations.end(), 255, 0);
@@ -156,7 +156,6 @@ void InitMonster(Monster &monster, Direction rd, size_t typeIndex, Point positio
 	monster.rndItemSeed = AdvanceRndSeed();
 	monster.aiSeed = AdvanceRndSeed();
 	monster.whoHit = 0;
-	monster.exp = monster.data().exp;
 	monster.toHit = monster.data().toHit;
 	monster.minDamage = monster.data().minDamage;
 	monster.maxDamage = monster.data().maxDamage;
@@ -185,7 +184,6 @@ void InitMonster(Monster &monster, Direction rd, size_t typeIndex, Point positio
 			monster.maxHitPoints += 64;
 		monster.hitPoints = monster.maxHitPoints;
 		monster.level += 15;
-		monster.exp = 2 * (monster.exp + 1000);
 		monster.toHit += NightmareToHitBonus;
 		monster.minDamage = 2 * (monster.minDamage + 2);
 		monster.maxDamage = 2 * (monster.maxDamage + 2);
@@ -201,7 +199,6 @@ void InitMonster(Monster &monster, Direction rd, size_t typeIndex, Point positio
 			monster.maxHitPoints += 192;
 		monster.hitPoints = monster.maxHitPoints;
 		monster.level += 30;
-		monster.exp = 4 * (monster.exp + 1000);
 		monster.toHit += HellToHitBonus;
 		monster.minDamage = 4 * monster.minDamage + 6;
 		monster.maxDamage = 4 * monster.maxDamage + 6;
@@ -501,23 +498,23 @@ void PlaceQuestMonsters()
 		}
 
 		if (Quests[Q_LTBANNER].IsAvailable()) {
-			auto dunData = LoadFileInMem<uint16_t>("Levels\\L1Data\\Banner1.DUN");
+			auto dunData = LoadFileInMem<uint16_t>("levels\\l1data\\banner1.dun");
 			SetMapMonsters(dunData.get(), SetPiece.position.megaToWorld());
 		}
 		if (Quests[Q_BLOOD].IsAvailable()) {
-			auto dunData = LoadFileInMem<uint16_t>("Levels\\L2Data\\Blood2.DUN");
+			auto dunData = LoadFileInMem<uint16_t>("levels\\l2data\\blood2.dun");
 			SetMapMonsters(dunData.get(), SetPiece.position.megaToWorld());
 		}
 		if (Quests[Q_BLIND].IsAvailable()) {
-			auto dunData = LoadFileInMem<uint16_t>("Levels\\L2Data\\Blind2.DUN");
+			auto dunData = LoadFileInMem<uint16_t>("levels\\l2data\\blind2.dun");
 			SetMapMonsters(dunData.get(), SetPiece.position.megaToWorld());
 		}
 		if (Quests[Q_ANVIL].IsAvailable()) {
-			auto dunData = LoadFileInMem<uint16_t>("Levels\\L3Data\\Anvil.DUN");
+			auto dunData = LoadFileInMem<uint16_t>("levels\\l3data\\anvil.dun");
 			SetMapMonsters(dunData.get(), SetPiece.position.megaToWorld() + Displacement { 2, 2 });
 		}
 		if (Quests[Q_WARLORD].IsAvailable()) {
-			auto dunData = LoadFileInMem<uint16_t>("Levels\\L4Data\\Warlord.DUN");
+			auto dunData = LoadFileInMem<uint16_t>("levels\\l4data\\warlord.dun");
 			SetMapMonsters(dunData.get(), SetPiece.position.megaToWorld());
 			AddMonsterType(UniqueMonsterType::WarlordOfBlood, PLACE_SCATTER);
 		}
@@ -534,7 +531,7 @@ void PlaceQuestMonsters()
 			PlaceUniqueMonst(UniqueMonsterType::Lazarus, 0, 0);
 			PlaceUniqueMonst(UniqueMonsterType::RedVex, 0, 0);
 			PlaceUniqueMonst(UniqueMonsterType::BlackJade, 0, 0);
-			auto dunData = LoadFileInMem<uint16_t>("Levels\\L4Data\\Vile1.DUN");
+			auto dunData = LoadFileInMem<uint16_t>("levels\\l4data\\vile1.dun");
 			SetMapMonsters(dunData.get(), SetPiece.position.megaToWorld());
 		}
 
@@ -561,19 +558,19 @@ void PlaceQuestMonsters()
 void LoadDiabMonsts()
 {
 	{
-		auto dunData = LoadFileInMem<uint16_t>("Levels\\L4Data\\diab1.DUN");
+		auto dunData = LoadFileInMem<uint16_t>("levels\\l4data\\diab1.dun");
 		SetMapMonsters(dunData.get(), DiabloQuad1.megaToWorld());
 	}
 	{
-		auto dunData = LoadFileInMem<uint16_t>("Levels\\L4Data\\diab2a.DUN");
+		auto dunData = LoadFileInMem<uint16_t>("levels\\l4data\\diab2a.dun");
 		SetMapMonsters(dunData.get(), DiabloQuad2.megaToWorld());
 	}
 	{
-		auto dunData = LoadFileInMem<uint16_t>("Levels\\L4Data\\diab3a.DUN");
+		auto dunData = LoadFileInMem<uint16_t>("levels\\l4data\\diab3a.dun");
 		SetMapMonsters(dunData.get(), DiabloQuad3.megaToWorld());
 	}
 	{
-		auto dunData = LoadFileInMem<uint16_t>("Levels\\L4Data\\diab4a.DUN");
+		auto dunData = LoadFileInMem<uint16_t>("levels\\l4data\\diab4a.dun");
 		SetMapMonsters(dunData.get(), DiabloQuad4.megaToWorld());
 	}
 }
@@ -624,7 +621,7 @@ void UpdateEnemy(Monster &monster)
 	bool bestsameroom = false;
 	const auto &position = monster.position.tile;
 	if ((monster.flags & MFLAG_BERSERK) != 0 || (monster.flags & MFLAG_GOLEM) == 0) {
-		for (int pnum = 0; pnum < MAX_PLRS; pnum++) {
+		for (size_t pnum = 0; pnum < Players.size(); pnum++) {
 			Player &player = Players[pnum];
 			if (!player.plractive || !player.isOnActiveLevel() || player._pLvlChanging
 			    || (((player._pHitPoints >> 6) == 0) && gbIsMultiplayer))
@@ -635,7 +632,7 @@ void UpdateEnemy(Monster &monster)
 			    || ((sameroom || !bestsameroom) && dist < bestDist)
 			    || (menemy == -1)) {
 				monster.flags &= ~MFLAG_TARGETS_MONSTER;
-				menemy = pnum;
+				menemy = static_cast<int>(pnum);
 				target = player.position.future;
 				bestDist = dist;
 				bestsameroom = sameroom;
@@ -2259,7 +2256,6 @@ void FallenAi(Monster &monster)
 			for (int x = -rad; x <= rad; x++) {
 				int xpos = monster.position.tile.x + x;
 				int ypos = monster.position.tile.y + y;
-				// BUGFIX: incorrect check of offset against limits of the dungeon (fixed)
 				if (InDungeonBounds({ xpos, ypos })) {
 					int m = dMonster[xpos][ypos];
 					if (m <= 0)
@@ -3095,7 +3091,7 @@ bool UpdateModeStance(Monster &monster)
 void InitTRNForUniqueMonster(Monster &monster)
 {
 	char filestr[64];
-	*BufCopy(filestr, R"(Monsters\Monsters\)", UniqueMonstersData[static_cast<size_t>(monster.uniqueType)].mTrnName, ".TRN") = '\0';
+	*BufCopy(filestr, R"(monsters\monsters\)", UniqueMonstersData[static_cast<size_t>(monster.uniqueType)].mTrnName, ".trn") = '\0';
 	monster.uniqueMonsterTRN = LoadFileInMem<uint8_t>(filestr);
 }
 
@@ -3109,7 +3105,6 @@ void PrepareUniqueMonst(Monster &monster, UniqueMonsterType monsterType, size_t 
 		monster.level = monster.data().level + 5;
 	}
 
-	monster.exp *= 2;
 	monster.maxHitPoints = uniqueMonsterData.mmaxhp << 6;
 
 	if (!gbIsMultiplayer)
@@ -3149,7 +3144,6 @@ void PrepareUniqueMonst(Monster &monster, UniqueMonsterType monsterType, size_t 
 			monster.maxHitPoints += 64;
 		monster.level += 15;
 		monster.hitPoints = monster.maxHitPoints;
-		monster.exp = 2 * (monster.exp + 1000);
 		monster.minDamage = 2 * (monster.minDamage + 2);
 		monster.maxDamage = 2 * (monster.maxDamage + 2);
 		monster.minDamageSpecial = 2 * (monster.minDamageSpecial + 2);
@@ -3162,7 +3156,6 @@ void PrepareUniqueMonst(Monster &monster, UniqueMonsterType monsterType, size_t 
 			monster.maxHitPoints += 192;
 		monster.level += 30;
 		monster.hitPoints = monster.maxHitPoints;
-		monster.exp = 4 * (monster.exp + 1000);
 		monster.minDamage = 4 * monster.minDamage + 6;
 		monster.maxDamage = 4 * monster.maxDamage + 6;
 		monster.minDamageSpecial = 4 * monster.minDamageSpecial + 6;
@@ -3333,7 +3326,7 @@ void InitMonsterSND(CMonster &monsterType)
 
 		for (int j = 0; j < 2; j++) {
 			char path[64];
-			*BufCopy(path, "Monsters\\", soundSuffix, prefix, j + 1, ".WAV") = '\0';
+			*BufCopy(path, "monsters\\", soundSuffix, prefix, j + 1, ".wav") = '\0';
 			monsterType.sounds[i][j] = sound_file_load(path);
 		}
 	}
@@ -3352,7 +3345,7 @@ void InitMonsterGFX(CMonster &monsterType)
 	if (!HeadlessMode) {
 		monsterType.animData = MultiFileLoader<MaxAnims> {}(
 		    numAnims,
-		    FileNameWithCharAffixGenerator({ "Monsters\\", monsterData.assetsSuffix }, ".CL2", Animletter),
+		    FileNameWithCharAffixGenerator({ "monsters\\", monsterData.assetsSuffix }, ".cl2", Animletter),
 		    animOffsets.data(),
 		    hasAnim);
 	}
@@ -3664,7 +3657,7 @@ void M_StartHit(Monster &monster, const Player &player, int dam)
 void MonsterDeath(Monster &monster, Direction md, bool sendmsg)
 {
 	if (!monster.isPlayerMinion())
-		AddPlrMonstExper(monster.level, monster.exp, monster.whoHit);
+		AddPlrMonstExper(monster.level, monster.exp(sgGameInitInfo.nDifficulty), monster.whoHit);
 
 	MonsterKillCounts[monster.type().type]++;
 	monster.hitPoints = 0;
@@ -3757,17 +3750,17 @@ void DoEnding()
 	switch (MyPlayer->_pClass) {
 	case HeroClass::Sorcerer:
 	case HeroClass::Monk:
-		play_movie("gendata\\DiabVic1.smk", false);
+		play_movie("gendata\\diabvic1.smk", false);
 		break;
 	case HeroClass::Warrior:
 	case HeroClass::Barbarian:
-		play_movie("gendata\\DiabVic2.smk", false);
+		play_movie("gendata\\diabvic2.smk", false);
 		break;
 	default:
-		play_movie("gendata\\DiabVic3.smk", false);
+		play_movie("gendata\\diabvic3.smk", false);
 		break;
 	}
-	play_movie("gendata\\Diabend.smk", false);
+	play_movie("gendata\\diabend.smk", false);
 
 	bool bMusicOn = gbMusicOn;
 	gbMusicOn = true;
@@ -3838,6 +3831,8 @@ bool Walk(Monster &monster, Direction md)
 		break;
 	case Direction::NorthWest:
 		WalkNorthwards(monster, -1, 0, Direction::NorthWest);
+		break;
+	case Direction::NoDirection:
 		break;
 	}
 	return true;
@@ -3967,6 +3962,7 @@ void ProcessMonsters()
 
 		if ((monster.flags & MFLAG_TARGETS_MONSTER) != 0) {
 			assert(monster.enemy >= 0 && monster.enemy < MaxMonsters);
+			// BUGFIX: enemy target may be dead at time of access, thus reading garbage data from `Monsters[monster.enemy].position.future`.
 			monster.position.last = Monsters[monster.enemy].position.future;
 			monster.enemyPosition = monster.position.last;
 		} else {

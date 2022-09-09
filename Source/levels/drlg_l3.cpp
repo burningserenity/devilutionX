@@ -1395,6 +1395,7 @@ bool PlaceMiniSetRandom(const Miniset &miniset, int rndper)
 		for (int sx = 0; sx < DMAXX - sw; sx++) {
 			if (!miniset.matches({ sx, sy }))
 				continue;
+			// BUGFIX: This should not be applied to Nest levels
 			if (!CanReplaceTile(miniset.replace[0][0], { sx, sy }))
 				continue;
 			if (GenerateRnd(100) >= rndper)
@@ -1793,7 +1794,7 @@ void Fence()
 void LoadQuestSetPieces()
 {
 	if (Quests[Q_ANVIL].IsAvailable())
-		pSetPiece = LoadFileInMem<uint16_t>("Levels\\L3Data\\Anvil.DUN");
+		pSetPiece = LoadFileInMem<uint16_t>("levels\\l3data\\anvil.dun");
 }
 
 bool PlaceAnvil()

@@ -382,11 +382,11 @@ void FillFloor()
 void LoadQuestSetPieces()
 {
 	if (Quests[Q_BUTCHER].IsAvailable()) {
-		pSetPiece = LoadFileInMem<uint16_t>("Levels\\L1Data\\rnd6.DUN");
+		pSetPiece = LoadFileInMem<uint16_t>("levels\\l1data\\rnd6.dun");
 	} else if (Quests[Q_SKELKING].IsAvailable() && !gbIsMultiplayer) {
-		pSetPiece = LoadFileInMem<uint16_t>("Levels\\L1Data\\SKngDO.DUN");
+		pSetPiece = LoadFileInMem<uint16_t>("levels\\l1data\\skngdo.dun");
 	} else if (Quests[Q_LTBANNER].IsAvailable()) {
-		pSetPiece = LoadFileInMem<uint16_t>("Levels\\L1Data\\Banner2.DUN");
+		pSetPiece = LoadFileInMem<uint16_t>("levels\\l1data\\banner2.dun");
 	}
 }
 
@@ -1246,6 +1246,7 @@ void PlaceMiniSetRandom(const Miniset &miniset, int rndper)
 		for (int sx = 0; sx < DMAXX - sw; sx++) {
 			if (!miniset.matches({ sx, sy }, false))
 				continue;
+			// BUGFIX: This code is copied from Cave and should not be applied for crypt
 			if (!CanReplaceTile(miniset.replace[0][0], { sx, sy }))
 				continue;
 			if (GenerateRnd(100) >= rndper)

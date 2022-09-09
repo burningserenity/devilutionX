@@ -182,6 +182,9 @@ int AddGoldToInventory(Player &player, int value);
 bool GoldAutoPlace(Player &player, Item &goldStack);
 void CheckInvSwap(Player &player, inv_body_loc bLoc, int idx, uint16_t wCI, int seed, bool bId, uint32_t dwBuff);
 void inv_update_rem_item(Player &player, inv_body_loc iv);
+void CheckInvSwap(Player &player, int invGridIndex, int idx, uint16_t wCI, int seed, bool bId, uint32_t dwBuff);
+void CheckInvRemove(Player &player, int invGridIndex);
+void CheckBeltSwap(Player &player, int beltIndex, int idx, uint16_t wCI, int seed, bool bId, uint32_t dwBuff);
 void TransferItemToStash(Player &player, int location);
 void CheckInvItem(bool isShiftHeld = false, bool isCtrlHeld = false);
 
@@ -229,7 +232,7 @@ bool CanUseScroll(Player &player, spell_id spell);
 void ConsumeStaffCharge(Player &player);
 bool CanUseStaff(Player &player, spell_id spellId);
 Item &GetInventoryItem(Player &player, int location);
-bool UseInvItem(int pnum, int cii);
+bool UseInvItem(size_t pnum, int cii);
 void DoTelekinesis();
 int CalculateGold(Player &player);
 

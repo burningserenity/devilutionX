@@ -47,9 +47,9 @@
 
 namespace devilution {
 
-int MyPlayerId;
-Player *MyPlayer = &Players[MyPlayerId];
-Player Players[MAX_PLRS];
+size_t MyPlayerId;
+Player *MyPlayer;
+std::vector<Player> Players;
 bool MyPlayerIsDead;
 
 /** Specifies the X-coordinate delta from the player start location in Tristram. */
@@ -1775,6 +1775,17 @@ void Player::CalcScrolls()
 
 void Player::RemoveInvItem(int iv, bool calcScrolls)
 {
+	if (this == MyPlayer) {
+		// Locate the first grid index containing this item and notify remote clients
+		for (size_t i = 0; i < InventoryGridCells; i++) {
+			int8_t itemIndex = InvGrid[i];
+			if (abs(itemIndex) - 1 == iv) {
+				NetSendCmdParam1(false, CMD_DELINVITEMS, i);
+				break;
+			}
+		}
+	}
+
 	// Iterate through invGrid and remove every reference to item
 	for (int8_t &itemIndex : InvGrid) {
 		if (abs(itemIndex) - 1 == iv) {
@@ -1807,6 +1818,10 @@ void Player::RemoveInvItem(int iv, bool calcScrolls)
 
 void Player::RemoveSpdBarItem(int iv)
 {
+	if (this == MyPlayer) {
+		NetSendCmdParam1(false, CMD_DELBELTITEMS, iv);
+	}
+
 	SpdList[iv].clear();
 
 	CalcScrolls();
@@ -1918,13 +1933,6 @@ bool Player::IsWalking() const
 	return IsAnyOf(_pmode, PM_WALK_NORTHWARDS, PM_WALK_SOUTHWARDS, PM_WALK_SIDEWAYS);
 }
 
-void Player::Reset()
-{
-	// Create empty default initialized Player on heap to avoid excessive stack usage
-	auto emptyPlayer = std::make_unique<Player>();
-	*this = std::move(*emptyPlayer);
-}
-
 int Player::GetManaShieldDamageReduction()
 {
 	constexpr int8_t Max = 7;
@@ -1941,6 +1949,41 @@ void Player::RestorePartialLife()
 		l += l / 2;
 	_pHitPoints = std::min(_pHitPoints + l, _pMaxHP);
 	_pHPBase = std::min(_pHPBase + l, _pMaxHPBase);
+}
+
+void Player::RegenLife()
+{
+	int lvlMod = _pLevel > 1 ? 2 : 1;
+	int hpMod = 1;
+	if (IsAnyOf(_pClass, HeroClass::Barbarian, HeroClass::Warrior))
+		hpMod = _pLevel * 2;
+	else if (IsAnyOf(_pClass, HeroClass::Rogue, HeroClass::Monk, HeroClass::Bard))
+		hpMod = _pLevel + _pLevel / 2;
+	else
+		hpMod = (unsigned char)_pLevel;
+	if (_pmode != PM_DEATH && _pHitPoints < _pMaxHP) {
+		_pHitPoints = std::min(_pHitPoints + hpMod / lvlMod, _pMaxHP);
+		_pHPBase = std::min(_pHPBase + hpMod / lvlMod, _pMaxHPBase);
+	}
+}
+
+void Player::RegenMana()
+{
+	int lvlMod = _pLevel > 1 ? 2 : 1;
+	int manaMod = 1;
+	if (_pClass == HeroClass::Sorcerer)
+		manaMod = _pLevel * 2;
+	else if (IsAnyOf(_pClass, HeroClass::Rogue, HeroClass::Monk, HeroClass::Bard))
+		manaMod = _pLevel + _pLevel / 2;
+	else
+		manaMod = (unsigned char)_pLevel;
+
+	bool hasMana = HasNoneOf(_pIFlags, ItemSpecialEffect::NoMana);
+	bool canRegenMana = _pmode != PM_DEATH && _pmode != PM_SPELL && _pMana < _pMaxMana;
+	if (hasMana && canRegenMana) {
+		_pMana = std::min(_pMana + manaMod / lvlMod, _pMaxMana);
+		_pManaBase = std::min(_pManaBase + manaMod / lvlMod, _pMaxManaBase);
+	}
 }
 
 void Player::RestorePartialMana()
@@ -2233,7 +2276,7 @@ void LoadPlrGFX(Player &player, player_graphic graphic)
 
 	char prefix[3] = { CharChar[static_cast<std::size_t>(cls)], ArmourChar[player._pgfxnum >> 4], WepChar[static_cast<std::size_t>(animWeaponId)] };
 	char pszName[256];
-	*fmt::format_to(pszName, FMT_COMPILE(R"(PlrGFX\{0}\{1}\{1}{2}.CL2)"), path, string_view(prefix, 3), szCel) = 0;
+	*fmt::format_to(pszName, FMT_COMPILE(R"(plrgfx\{0}\{1}\{1}{2}.cl2)"), path, string_view(prefix, 3), szCel) = 0;
 	const uint16_t animationWidth = GetPlayerSpriteWidth(cls, graphic, animWeaponId);
 	animationData.sprites = LoadCl2Sheet(pszName, animationWidth);
 	std::optional<std::array<uint8_t, 256>> trn = GetClassTRN(player);
@@ -2406,7 +2449,7 @@ void SetPlrAnims(Player &player)
  */
 void CreatePlayer(Player &player, HeroClass c)
 {
-	player.Reset();
+	player = {};
 	SetRndSeed(SDL_GetTicks());
 
 	player._pClass = c;
@@ -2659,7 +2702,7 @@ void AddPlrExperience(Player &player, int lvl, int exp)
 void AddPlrMonstExper(int lvl, int exp, char pmask)
 {
 	int totplrs = 0;
-	for (int i = 0; i < MAX_PLRS; i++) {
+	for (size_t i = 0; i < Players.size(); i++) {
 		if (((1 << i) & pmask) != 0) {
 			totplrs++;
 		}
@@ -3150,7 +3193,7 @@ void RestartTownLvl(Player &player)
 	}
 }
 
-void StartWarpLvl(Player &player, int pidx)
+void StartWarpLvl(Player &player, size_t pidx)
 {
 	InitLevelChange(player);
 
@@ -3208,7 +3251,7 @@ void ProcessPlayers()
 
 	ValidatePlayer();
 
-	for (int pnum = 0; pnum < MAX_PLRS; pnum++) {
+	for (size_t pnum = 0; pnum < Players.size(); pnum++) {
 		Player &player = Players[pnum];
 		if (player.plractive && player.isOnActiveLevel() && (&player == MyPlayer || !player._pLvlChanging)) {
 			CheckCheatStats(player);
@@ -3266,6 +3309,14 @@ void ProcessPlayers()
 			player.previewCelSprite = std::nullopt;
 			if (player._pmode != PM_DEATH || player.AnimInfo.tickCounterOfCurrentFrame != 40)
 				player.AnimInfo.processAnimation();
+
+			if (*sgOptions.Gameplay.hpRegen) {
+				player.RegenLife();
+			}
+
+			if (*sgOptions.Gameplay.manaRegen) {
+				player.RegenMana();
+			}
 		}
 	}
 }

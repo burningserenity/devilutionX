@@ -281,6 +281,22 @@ enum _cmd_id : uint8_t {
 	//
 	// body (TCmdDelItem)
 	CMD_DELPLRITEMS,
+	// Put item into player's backpack.
+	//
+	// body (TCmdChItem)
+	CMD_CHANGEINVITEMS,
+	// Remove item from player's backpack.
+	//
+	// body (TCmdParam1)
+	CMD_DELINVITEMS,
+	// Put item into player's belt.
+	//
+	// body (TCmdChItem)
+	CMD_CHANGEBELTITEMS,
+	// Remove item from player's belt.
+	//
+	// body (TCmdParam1)
+	CMD_DELBELTITEMS,
 	// Damage target player.
 	//
 	// body (TCmdDamage)
@@ -729,7 +745,7 @@ void DeltaLoadLevel();
 void ClearLastSendPlayerCmd();
 void NetSendCmd(bool bHiPri, _cmd_id bCmd);
 void NetSendCmdGolem(uint8_t mx, uint8_t my, Direction dir, uint8_t menemy, int hp, uint8_t cl);
-void NetSendCmdLoc(int playerId, bool bHiPri, _cmd_id bCmd, Point position);
+void NetSendCmdLoc(size_t playerId, bool bHiPri, _cmd_id bCmd, Point position);
 void NetSendCmdLocParam1(bool bHiPri, _cmd_id bCmd, Point position, uint16_t wParam1);
 void NetSendCmdLocParam2(bool bHiPri, _cmd_id bCmd, Point position, uint16_t wParam1, uint16_t wParam2);
 void NetSendCmdLocParam3(bool bHiPri, _cmd_id bCmd, Point position, uint16_t wParam1, uint16_t wParam2, uint16_t wParam3);
@@ -743,10 +759,12 @@ void NetSendCmdGItem(bool bHiPri, _cmd_id bCmd, uint8_t pnum, uint8_t ii);
 void NetSendCmdPItem(bool bHiPri, _cmd_id bCmd, Point position, const Item &item);
 void NetSendCmdChItem(bool bHiPri, uint8_t bLoc);
 void NetSendCmdDelItem(bool bHiPri, uint8_t bLoc);
+void NetSendCmdChInvItem(bool bHiPri, int invGridIndex);
+void NetSendCmdChBeltItem(bool bHiPri, int invGridIndex);
 void NetSendCmdDamage(bool bHiPri, uint8_t bPlr, uint32_t dwDam);
 void NetSendCmdMonDmg(bool bHiPri, uint16_t wMon, uint32_t dwDam);
 void NetSendCmdString(uint32_t pmask, const char *pszStr);
 void delta_close_portal(int pnum);
-size_t ParseCmd(int pnum, const TCmd *pCmd);
+size_t ParseCmd(size_t pnum, const TCmd *pCmd);
 
 } // namespace devilution

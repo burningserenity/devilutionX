@@ -15,6 +15,7 @@
 #include "gamemenu.h"
 #include "inv.h"
 #include "missiles.h"
+#include "options.h"
 
 namespace devilution {
 
@@ -189,6 +190,9 @@ void ConsumeSpell(Player &player, spell_id sn)
 			break;
 #endif
 		int ma = GetManaAmount(player, sn);
+		if (*sgOptions.Gameplay.manaRegen) {
+			ma *= 3;
+		}
 		player._pMana -= ma;
 		player._pManaBase -= ma;
 		drawmanaflag = true;
@@ -252,8 +256,12 @@ void CastSpell(int id, spell_id spl, int sx, int sy, int dx, int dy, int spllvl)
 	}
 }
 
-void DoResurrect(int pnum, Player &target)
+void DoResurrect(size_t pnum, Player &target)
 {
+	if (pnum >= Players.size()) {
+		return;
+	}
+
 	AddMissile(target.position.tile, target.position.tile, Direction::South, MIS_RESURRECTBEAM, TARGET_MONSTERS, pnum, 0, 0);
 
 	if (target._pHitPoints != 0)

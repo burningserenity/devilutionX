@@ -157,12 +157,12 @@ set(devilutionx_assets
   gendata/cutportlw.clx
   gendata/cutportrw.clx
   gendata/cutstartw.clx
-  Levels/L1Data/SklKngT.dun
-  Levels/L2Data/BonechaT.dun
-  NLevels/L5Data/cornerstone.dun
-  NLevels/L5Data/uberroom.dun
-  ui_art/black_diablo.pcx
-  ui_art/black_hellfire.pcx
+  levels/l1data/sklkngt.dun
+  levels/l2data/bonechat.dun
+  nlevels/l5data/cornerstone.dun
+  nlevels/l5data/uberroom.dun
+  ui_art/diablo.pal
+  ui_art/hellfire.pal
   ui_art/creditsw.clx
   ui_art/dvl_but_sml.clx
   ui_art/dvl_lrpopup.clx

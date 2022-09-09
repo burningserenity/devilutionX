@@ -6,6 +6,7 @@
 #pragma once
 
 #include <cstdint>
+#include <vector>
 
 #include <algorithm>
 #include <array>
@@ -464,11 +465,6 @@ struct Player {
 	bool IsWalking() const;
 
 	/**
-	 * @brief Resets all Data of the current Player
-	 */
-	void Reset();
-
-	/**
 	 * @brief Returns item location taking into consideration barbarian's ability to hold two-handed maces and clubs in one hand.
 	 */
 	item_equip_type GetItemLocation(const Item &item) const
@@ -654,6 +650,16 @@ struct Player {
 	}
 
 	/**
+	 * @brief Regenerates player HP over time, based on level and class.
+	 *
+	 * This regenerates a fixed amount of non-fractional mana points over time, with the value based on the player level
+	 * and class. Warriors/barbarians get the same number of life points as their level, rogue/monk/bard get 3/4 of their
+	 * level life points, and sourcerers get 1/2 of their level life points. Number of life points regenerated is doubled
+	 * if the character is level 1, to prevent regenerating a fractional value.
+	 */
+	void RegenLife();
+
+	/**
 	 * @brief Restores between 1/8 (inclusive) and 1/4 (exclusive) of the players max Mana (further adjusted by class).
 	 *
 	 * This determines a random amount of non-fractional mana points to restore then scales the value based on the
@@ -673,6 +679,18 @@ struct Player {
 			_pManaBase = _pMaxManaBase;
 		}
 	}
+
+	/**
+	 * @brief Regenerates player Mana, based on level and class.
+	 *
+	 * This regenerates a fixed amount of non-fractional mana points over time, with the value based on the player
+	 * level and class. Sorcerers get the same amount of mana regenerated as their level, rogue/monk/bard get 3/4
+	 * of their level regenerated, and warrior/barbarian get 1/2 of their level regenerated. These numbers are
+	 * doubled if the player is level 1, to prevent using a fractional amount. If the player can't use magic due
+	 * to an equipped item then they get nothing.
+	 */
+	void RegenMana();
+
 	/**
 	 * @brief Sets the readied spell to the spell in the specified equipment slot. Does nothing if the item does not have a valid spell.
 	 * @param bodyLocation - the body location whose item will be checked for the spell.
@@ -745,9 +763,9 @@ struct Player {
 	}
 };
 
-extern DVL_API_FOR_TEST int MyPlayerId;
+extern DVL_API_FOR_TEST size_t MyPlayerId;
 extern DVL_API_FOR_TEST Player *MyPlayer;
-extern DVL_API_FOR_TEST Player Players[MAX_PLRS];
+extern DVL_API_FOR_TEST std::vector<Player> Players;
 extern bool MyPlayerIsDead;
 extern const int BlockBonuses[enum_size<HeroClass>::value];
 
@@ -797,7 +815,7 @@ void SyncPlrKill(Player &player, int earflag);
 void RemovePlrMissiles(const Player &player);
 void StartNewLvl(Player &player, interface_mode fom, int lvl);
 void RestartTownLvl(Player &player);
-void StartWarpLvl(Player &player, int pidx);
+void StartWarpLvl(Player &player, size_t pidx);
 void ProcessPlayers();
 void ClrPlrPath(Player &player);
 bool PosOkPlayer(const Player &player, Point position);
