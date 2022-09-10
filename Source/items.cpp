@@ -2740,13 +2740,12 @@ void CalcPlrItemVals(Player &player, bool loadgfx)
 		ResetPlayerGFX(player);
 		SetPlrAnims(player);
 		player.previewCelSprite = std::nullopt;
-		if (player._pmode == PM_STAND) {
-			LoadPlrGFX(player, player_graphic::Stand);
-			player.AnimInfo.changeAnimationData(player.AnimationData[static_cast<size_t>(player_graphic::Stand)].spritesForDirection(player._pdir), player._pNFrames, 4);
-		} else {
-			LoadPlrGFX(player, player_graphic::Walk);
-			player.AnimInfo.changeAnimationData(player.AnimationData[static_cast<size_t>(player_graphic::Walk)].spritesForDirection(player._pdir), player._pWFrames, 1);
-		}
+		player_graphic graphic = player.getGraphic();
+		int8_t numberOfFrames;
+		int8_t ticksPerFrame;
+		player.getAnimationFramesAndTicksPerFrame(graphic, numberOfFrames, ticksPerFrame);
+		LoadPlrGFX(player, graphic);
+		player.AnimInfo.changeAnimationData(player.AnimationData[static_cast<size_t>(graphic)].spritesForDirection(player._pdir), numberOfFrames, ticksPerFrame);
 	} else {
 		player._pgfxnum = gfxNum;
 	}
@@ -3273,36 +3272,17 @@ void RecreateItem(const Player &player, Item &item, int idx, uint16_t icreateinf
 	gbIsHellfire = tmpIsHellfire;
 }
 
-void RecreateEar(Item &item, uint16_t ic, int iseed, int id, int dur, int mdur, int ch, int mch, int ivalue, int ibuff)
+void RecreateEar(Item &item, uint16_t ic, int iseed, uint8_t bCursval, string_view heroName)
 {
 	InitializeItem(item, IDI_EAR);
-
-	char heroName[17];
-	heroName[0] = static_cast<char>((ic >> 8) & 0x7F);
-	heroName[1] = static_cast<char>(ic & 0x7F);
-	heroName[2] = static_cast<char>((iseed >> 24) & 0x7F);
-	heroName[3] = static_cast<char>((iseed >> 16) & 0x7F);
-	heroName[4] = static_cast<char>((iseed >> 8) & 0x7F);
-	heroName[5] = static_cast<char>(iseed & 0x7F);
-	heroName[6] = static_cast<char>(id & 0x7F);
-	heroName[7] = static_cast<char>(dur & 0x7F);
-	heroName[8] = static_cast<char>(mdur & 0x7F);
-	heroName[9] = static_cast<char>(ch & 0x7F);
-	heroName[10] = static_cast<char>(mch & 0x7F);
-	heroName[11] = static_cast<char>((ivalue >> 8) & 0x7F);
-	heroName[12] = static_cast<char>((ibuff >> 24) & 0x7F);
-	heroName[13] = static_cast<char>((ibuff >> 16) & 0x7F);
-	heroName[14] = static_cast<char>((ibuff >> 8) & 0x7F);
-	heroName[15] = static_cast<char>(ibuff & 0x7F);
-	heroName[16] = '\0';
 
 	std::string itemName = fmt::format(fmt::runtime(_(/* TRANSLATORS: {:s} will be a Character Name */ "Ear of {:s}")), heroName);
 
 	CopyUtf8(item._iName, itemName, sizeof(item._iName));
 	CopyUtf8(item._iIName, heroName, sizeof(item._iIName));
 
-	item._iCurs = ((ivalue >> 6) & 3) + ICURS_EAR_SORCERER;
-	item._ivalue = ivalue & 0x3F;
+	item._iCurs = ((bCursval >> 6) & 3) + ICURS_EAR_SORCERER;
+	item._ivalue = bCursval & 0x3F;
 	item._iCreateInfo = ic;
 	item._iSeed = iseed;
 }
@@ -3495,7 +3475,7 @@ void ProcessItems()
 			if (item.AnimInfo.currentFrame == (item.AnimInfo.numberOfFrames - 1) / 2)
 				PlaySfxLoc(ItemDropSnds[ItemCAnimTbl[item._iCurs]], item.position);
 
-			if (item.AnimInfo.currentFrame >= item.AnimInfo.numberOfFrames - 1) {
+			if (item.AnimInfo.isLastFrame()) {
 				item.AnimInfo.currentFrame = item.AnimInfo.numberOfFrames - 1;
 				item._iAnimFlag = false;
 				item._iSelFlag = 1;

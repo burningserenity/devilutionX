@@ -523,6 +523,9 @@ void CheckInvPaste(Player &player, Point cursorPosition)
 				player._pNumInv++;
 				player.InvGrid[ii] = player._pNumInv;
 			}
+			if (&player == MyPlayer) {
+				NetSendCmdChInvItem(false, ii);
+			}
 		} else {
 			if (it == 0) {
 				player.InvList[player._pNumInv] = player.HoldItem.pop();
@@ -1020,6 +1023,9 @@ int CreateGoldItemInInventorySlot(Player &player, int slotIndex, int value)
 	MakeGoldStack(goldItem, std::min(value, MaxGold));
 	player._pNumInv++;
 	player.InvGrid[slotIndex] = player._pNumInv;
+	if (&player == MyPlayer) {
+		NetSendCmdChInvItem(false, slotIndex);
+	}
 
 	value -= goldItem._ivalue;
 
@@ -1424,6 +1430,7 @@ int AddGoldToInventory(Player &player, int value)
 			value = 0;
 		}
 
+		NetSyncInvItem(player, i);
 		SetPlrHandGoldCurs(goldItem);
 	}
 
@@ -1452,16 +1459,9 @@ bool GoldAutoPlace(Player &player, Item &goldStack)
 	return goldStack._ivalue == 0;
 }
 
-void CheckInvSwap(Player &player, inv_body_loc bLoc, int idx, uint16_t wCI, int seed, bool bId, uint32_t dwBuff)
+void CheckInvSwap(Player &player, inv_body_loc bLoc)
 {
 	Item &item = player.InvBody[bLoc];
-
-	item = {};
-	RecreateItem(player, item, idx, wCI, seed, 0, (dwBuff & CF_HELLFIRE) != 0);
-
-	if (bId) {
-		item._iIdentified = true;
-	}
 
 	if (bLoc == INVLOC_HAND_LEFT && player.GetItemLocation(item) == ILOC_TWOHAND) {
 		player.InvBody[INVLOC_HAND_RIGHT].clear();
@@ -1479,15 +1479,8 @@ void inv_update_rem_item(Player &player, inv_body_loc iv)
 	CalcPlrInv(player, player._pmode != PM_DEATH);
 }
 
-void CheckInvSwap(Player &player, int invGridIndex, int idx, uint16_t wCI, int seed, bool bId, uint32_t dwBuff)
+void CheckInvSwap(Player &player, const Item &item, int invGridIndex)
 {
-	Item item = {};
-	RecreateItem(player, item, idx, wCI, seed, 0, (dwBuff & CF_HELLFIRE) != 0);
-
-	if (bId) {
-		item._iIdentified = true;
-	}
-
 	auto itemSize = GetInventorySize(item);
 
 	const int pitch = 10;
@@ -1495,8 +1488,9 @@ void CheckInvSwap(Player &player, int invGridIndex, int idx, uint16_t wCI, int s
 		for (int y = 0; y < itemSize.height; y++) {
 			int rowGridIndex = invGridIndex + pitch * y;
 			for (int x = 0; x < itemSize.width; x++) {
-				if (player.InvGrid[rowGridIndex + x] != 0)
-					return abs(player.InvGrid[rowGridIndex]);
+				int gridIndex = rowGridIndex + x;
+				if (player.InvGrid[gridIndex] != 0)
+					return abs(player.InvGrid[gridIndex]);
 			}
 		}
 		player._pNumInv++;
@@ -1533,18 +1527,6 @@ void CheckInvRemove(Player &player, int invGridIndex)
 
 	if (invListIndex >= 0) {
 		player.RemoveInvItem(invListIndex);
-	}
-}
-
-void CheckBeltSwap(Player &player, int beltIndex, int idx, uint16_t wCI, int seed, bool bId, uint32_t dwBuff)
-{
-	Item &item = player.SpdList[beltIndex];
-
-	item = {};
-	RecreateItem(player, item, idx, wCI, seed, 0, (dwBuff & CF_HELLFIRE) != 0);
-
-	if (bId) {
-		item._iIdentified = true;
 	}
 }
 
@@ -1848,25 +1830,48 @@ int SyncDropItem(Point position, int idx, uint16_t icreateinfo, int iseed, int i
 
 	dItem[position.x][position.y] = ii + 1;
 
-	if (idx == IDI_EAR) {
-		RecreateEar(item, icreateinfo, iseed, id, dur, mdur, ch, mch, ivalue, ibuff);
-	} else {
-		RecreateItem(*MyPlayer, item, idx, icreateinfo, iseed, ivalue, (ibuff & CF_HELLFIRE) != 0);
-		if (id != 0)
-			item._iIdentified = true;
-		item._iDurability = dur;
-		item._iMaxDur = mdur;
-		item._iCharges = ch;
-		item._iMaxCharges = mch;
-		item._iPLToHit = toHit;
-		item._iMaxDam = maxDam;
-		item._iMinStr = minStr;
-		item._iMinMag = minMag;
-		item._iMinDex = minDex;
-		item._iAC = ac;
-		item.dwBuff = ibuff;
-	}
+	RecreateItem(*MyPlayer, item, idx, icreateinfo, iseed, ivalue, (ibuff & CF_HELLFIRE) != 0);
+	if (id != 0)
+		item._iIdentified = true;
+	item._iDurability = dur;
+	item._iMaxDur = mdur;
+	item._iCharges = ch;
+	item._iMaxCharges = mch;
+	item._iPLToHit = toHit;
+	item._iMaxDam = maxDam;
+	item._iMinStr = minStr;
+	item._iMinMag = minMag;
+	item._iMinDex = minDex;
+	item._iAC = ac;
+	item.dwBuff = ibuff;
+	item.position = position;
+	RespawnItem(item, true);
 
+	if (currlevel == 21 && position == CornerStone.position) {
+		CornerStone.item = item;
+		InitQTextMsg(TEXT_CORNSTN);
+		Quests[Q_CORNSTN]._qlog = false;
+		Quests[Q_CORNSTN]._qactive = QUEST_DONE;
+	}
+	return ii;
+}
+
+int SyncPutEar(const Player &player, Point position, uint16_t icreateinfo, int iseed, uint8_t cursval, string_view heroname)
+{
+	std::optional<Point> itemTile = FindAdjacentPositionForItem(player.position.tile, GetDirection(player.position.tile, position));
+	if (!itemTile)
+		return -1;
+
+	return SyncDropEar(*itemTile, icreateinfo, iseed, cursval, heroname);
+}
+
+int SyncDropEar(Point position, uint16_t icreateinfo, int iseed, uint8_t cursval, string_view heroname)
+{
+	int ii = AllocateItem();
+	auto &item = Items[ii];
+
+	dItem[position.x][position.y] = ii + 1;
+	RecreateEar(item, icreateinfo, iseed, cursval, heroname);
 	item.position = position;
 	RespawnItem(item, true);
 
