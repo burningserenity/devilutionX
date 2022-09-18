@@ -2202,6 +2202,9 @@ void LoadGameLevel(bool firstflag, lvl_entry lvldir)
 				DeltaLoadLevel();
 
 			IncProgress();
+			for (int x = 0; x < DMAXX; x++)
+				for (int y = 0; y < DMAXY; y++)
+					UpdateAutomapExplorer({ x, y }, MAP_EXP_SELF);
 		}
 		if (!gbIsMultiplayer)
 			ResyncQuests();
@@ -2329,7 +2332,7 @@ void game_loop(bool bStartup)
 		}
 		TimeoutCursor(false);
 		GameLogic();
-		ClearLastSendPlayerCmd();
+		ClearLastSentPlayerCmd();
 
 		if (!gbRunGame || !gbIsMultiplayer || demo::IsRunning() || demo::IsRecording() || !nthread_has_500ms_passed())
 			break;

@@ -198,7 +198,7 @@ bool MonsterMHit(int pnum, int monsterId, int mindam, int maxdam, int dist, miss
 		hper -= player.CalculateArmorPierce(monster.armorClass, false);
 		hper -= (dist * dist) / 2;
 	} else {
-		hper = player.GetMagicToHit() - (monster.level * 2) - dist;
+		hper = player.GetMagicToHit() - (monster.level(sgGameInitInfo.nDifficulty) * 2) - dist;
 	}
 
 	hper = clamp(hper, 5, 95);
@@ -956,14 +956,14 @@ bool PlayerMHit(int pnum, Monster *monster, int dist, int mind, int maxd, missil
 		int tac = player.GetArmor();
 		if (monster != nullptr) {
 			hper = monster->toHit
-			    + ((monster->level - player._pLevel) * 2)
+			    + ((monster->level(sgGameInitInfo.nDifficulty) - player._pLevel) * 2)
 			    + 30
 			    - (dist * 2) - tac;
 		} else {
 			hper = 100 - (tac / 2) - (dist * 2);
 		}
 	} else if (monster != nullptr) {
-		hper += (monster->level * 2) - (player._pLevel * 2) - (dist * 2);
+		hper += (monster->level(sgGameInitInfo.nDifficulty) * 2) - (player._pLevel * 2) - (dist * 2);
 	}
 
 	int minhit = 10;
@@ -987,7 +987,7 @@ bool PlayerMHit(int pnum, Monster *monster, int dist, int mind, int maxd, missil
 
 	int blkper = player.GetBlockChance(false);
 	if (monster != nullptr)
-		blkper -= (monster->level - player._pLevel) * 2;
+		blkper -= (monster->level(sgGameInitInfo.nDifficulty) - player._pLevel) * 2;
 	blkper = clamp(blkper, 0, 100);
 
 	int8_t resper;
@@ -1392,9 +1392,11 @@ void AddWarp(Missile &missile, const AddMissileParameter & /*parameter*/)
 
 	for (int i = 0; i < numtrigs && i < MAXTRIGGERS; i++) {
 		TriggerStruct *trg = &trigs[i];
-		if (trg->_tmsg == WM_DIABTWARPUP || trg->_tmsg == WM_DIABPREVLVL || trg->_tmsg == WM_DIABNEXTLVL || trg->_tmsg == WM_DIABRTNLVL) {
+		if (IsAnyOf(trg->_tmsg, WM_DIABTWARPUP, WM_DIABPREVLVL, WM_DIABNEXTLVL, WM_DIABRTNLVL)) {
 			Point candidate = trg->position;
-			if ((leveltype == DTYPE_CATHEDRAL || leveltype == DTYPE_CATACOMBS) && (trg->_tmsg == WM_DIABNEXTLVL || trg->_tmsg == WM_DIABPREVLVL || trg->_tmsg == WM_DIABRTNLVL)) {
+			if (leveltype == DTYPE_CATHEDRAL && IsAnyOf(trg->_tmsg, WM_DIABPREVLVL, WM_DIABRTNLVL)) {
+				candidate += Displacement { 1, 2 };
+			} else if (IsAnyOf(leveltype, DTYPE_CATHEDRAL, DTYPE_CATACOMBS, DTYPE_CRYPT) && IsAnyOf(trg->_tmsg, WM_DIABNEXTLVL, WM_DIABPREVLVL, WM_DIABRTNLVL)) {
 				candidate += Displacement { 0, 1 };
 			} else {
 				candidate += Displacement { 1, 0 };
@@ -1953,7 +1955,7 @@ void AddFlash(Missile &missile, const AddMissileParameter & /*parameter*/)
 		ConsumeSpell(player, SPL_FLASH);
 	} break;
 	case MissileSource::Monster:
-		missile._midam = missile.sourceMonster()->level * 2;
+		missile._midam = missile.sourceMonster()->level(sgGameInitInfo.nDifficulty) * 2;
 		break;
 	case MissileSource::Trap:
 		missile._midam = currlevel / 2;

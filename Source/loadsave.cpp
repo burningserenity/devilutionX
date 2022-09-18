@@ -631,7 +631,7 @@ void LoadMonster(LoadHelper *file, Monster &monster)
 	monster.corpseId = file->NextLE<int8_t>();
 
 	monster.whoHit = file->NextLE<int8_t>();
-	monster.level = file->NextLE<int8_t>();
+	file->Skip(1); // Skip level - now calculated on the fly
 	file->Skip(1); // Alignment
 	file->Skip(2); // Skip exp - now calculated from monstdat when the monster dies
 
@@ -1397,14 +1397,14 @@ void SaveMonster(SaveHelper *file, Monster &monster)
 	file->WriteLE<int8_t>(monster.corpseId);
 
 	file->WriteLE<int8_t>(monster.whoHit);
-	file->WriteLE<int8_t>(monster.level);
+	file->WriteLE<int8_t>(static_cast<int8_t>(monster.level(sgGameInitInfo.nDifficulty)));
 	file->Skip(1); // Alignment
 	file->WriteLE<uint16_t>(static_cast<uint16_t>(std::min<unsigned>(std::numeric_limits<uint16_t>::max(), monster.exp(sgGameInitInfo.nDifficulty))));
 
 	file->WriteLE<uint8_t>(static_cast<uint8_t>(std::min<uint16_t>(monster.toHit, std::numeric_limits<uint8_t>::max()))); // For backwards compatibility
 	file->WriteLE<uint8_t>(monster.minDamage);
 	file->WriteLE<uint8_t>(monster.maxDamage);
-	file->WriteLE<uint8_t>(static_cast<uint8_t>(std::min<uint16_t>(monster.toHitSpecial, std::numeric_limits<uint8_t>::max()))); // For backwards compatibility
+	file->WriteLE<uint8_t>(static_cast<uint8_t>(std::min<uint16_t>(monster.toHitSpecial(sgGameInitInfo.nDifficulty), std::numeric_limits<uint8_t>::max()))); // For backwards compatibility
 	file->WriteLE<uint8_t>(monster.minDamageSpecial);
 	file->WriteLE<uint8_t>(monster.maxDamageSpecial);
 	file->WriteLE<uint8_t>(monster.armorClass);
