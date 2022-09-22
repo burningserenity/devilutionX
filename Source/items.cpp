@@ -441,13 +441,13 @@ void AddInitItems()
 
 		GetItemAttrs(item, PickRandomlyAmong({ IDI_MANA, IDI_HEAL }), curlv);
 
-		if (IsAnyOf(item._iName, "Potion of Healing", "Potion of Full Healing", "Potion of Rejuvenation", "Potion of Full Rejuvenation") && *sgOptions.Gameplay.hpRegen && j % 2 != 0) {
-			PopItem();
+		if (IsAnyOf(item._iCurs, ICURS_POTION_OF_HEALING, ICURS_POTION_OF_FULL_HEALING, ICURS_POTION_OF_REJUVENATION, ICURS_POTION_OF_FULL_REJUVENATION) && *sgOptions.Gameplay.hpRegen && j % 2 == 0) {
+			PopItem(item);
 			continue;
 		}
 
-		if (IsAnyOf(item._iName, "Potion of Mana", "Potion of Full Mana", "Potion of Rejuvenation", "Potion of Full Rejuvenation") && *sgOptions.Gameplay.manaRegen && j % 2 == 0) {
-			PopItem();
+		if (IsAnyOf(item._iCurs, ICURS_POTION_OF_MANA, ICURS_POTION_OF_FULL_MANA, ICURS_POTION_OF_REJUVENATION, ICURS_POTION_OF_FULL_REJUVENATION) && *sgOptions.Gameplay.manaRegen && j % 2 != 0) {
+			PopItem(item);
 			continue;
 		}
 
@@ -2956,11 +2956,14 @@ int AllocateItem()
 	return inum;
 }
 
-void PopItem()
+void PopItem(Item &item)
 {
-	const int inum = ActiveItems[ActiveItemCount];
-
-	Items[inum] = {};
+	item.clear();
+	item.position = { 0, 0 };
+	item._iAnimFlag = false;
+	item._iSelFlag = 0;
+	item._iIdentified = false;
+	item._iPostDraw = false;
 	ActiveItemCount--;
 }
 
