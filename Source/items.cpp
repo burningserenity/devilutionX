@@ -441,6 +441,16 @@ void AddInitItems()
 
 		GetItemAttrs(item, PickRandomlyAmong({ IDI_MANA, IDI_HEAL }), curlv);
 
+		if (IsAnyOf(item._iName, "Potion of Healing", "Potion of Full Healing", "Potion of Rejuvenation", "Potion of Full Rejuvenation") && *sgOptions.Gameplay.hpRegen && j % 2 != 0) {
+			PopItem();
+			continue;
+		}
+
+		if (IsAnyOf(item._iName, "Potion of Mana", "Potion of Full Mana", "Potion of Rejuvenation", "Potion of Full Rejuvenation") && *sgOptions.Gameplay.manaRegen && j % 2 == 0) {
+			PopItem();
+			continue;
+		}
+
 		item._iCreateInfo = curlv | CF_PREGEN;
 		SetupItem(item);
 		item.AnimInfo.currentFrame = item.AnimInfo.numberOfFrames - 1;
@@ -2227,40 +2237,7 @@ int RndItemForMonsterLevel(int8_t monsterLevel)
 
 	int ri = 0;
 
-	int pi = 0;
-
 	for (int i = 0; AllItemsList[i].iLoc != ILOC_INVALID; i++) {
-		const char healingPotions[4] = {
-			ICURS_POTION_OF_HEALING,
-			ICURS_POTION_OF_FULL_HEALING,
-			ICURS_POTION_OF_REJUVENATION,
-			ICURS_POTION_OF_FULL_REJUVENATION
-		};
-
-		const char manaPotions[4] = {
-			ICURS_POTION_OF_MANA,
-			ICURS_POTION_OF_FULL_MANA,
-			ICURS_POTION_OF_REJUVENATION,
-			ICURS_POTION_OF_FULL_REJUVENATION
-		};
-
-		bool isHealingPotion = false;
-		bool isManaPotion = false;
-
-		for (uint64_t j = 0; j < sizeof(healingPotions) / sizeof(healingPotions[0]); j++) {
-			if (AllItemsList[i].iCurs == healingPotions[i]) {
-				isHealingPotion = true;
-				break;
-			}
-		}
-
-		for (uint64_t j = 0; j < sizeof(manaPotions) / sizeof(manaPotions[0]); j++) {
-			if (AllItemsList[i].iCurs == manaPotions[i]) {
-				isManaPotion = true;
-				break;
-			}
-		}
-
 		if (!IsItemAvailable(i))
 			continue;
 
@@ -2278,23 +2255,6 @@ int RndItemForMonsterLevel(int8_t monsterLevel)
 			ri--;
 		if (AllItemsList[i].iSpell == SPL_HEALOTHER && !gbIsMultiplayer)
 			ri--;
-		if (*sgOptions.Gameplay.hpRegen || *sgOptions.Gameplay.manaRegen) {
-			if (isHealingPotion || isManaPotion) {
-				if (*sgOptions.Gameplay.hpRegen && isHealingPotion) {
-					pi++;
-				}
-
-				if (*sgOptions.Gameplay.manaRegen && isManaPotion) {
-					pi++;
-				}
-
-				if (pi > 2)
-					pi = 0;
-
-				if (pi != 2)
-					ri--;
-			}
-		}
 	}
 
 	int r = GenerateRnd(ri);
@@ -2994,6 +2954,14 @@ int AllocateItem()
 	Items[inum] = {};
 
 	return inum;
+}
+
+void PopItem()
+{
+	const int inum = ActiveItems[ActiveItemCount];
+
+	Items[inum] = {};
+	ActiveItemCount--;
 }
 
 Point GetSuperItemLoc(Point position)

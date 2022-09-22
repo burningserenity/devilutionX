@@ -493,6 +493,7 @@ void SetPlrHandGoldCurs(Item &gold);
 void CreatePlrItems(Player &player);
 bool ItemSpaceOk(Point position);
 int AllocateItem();
+void PopItem();
 Point GetSuperItemLoc(Point position);
 void GetItemAttrs(Item &item, int itemData, int lvl);
 void SetupItem(Item &item);
