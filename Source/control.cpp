@@ -47,6 +47,7 @@
 #include "utils/sdl_geometry.h"
 #include "utils/stdcompat/optional.hpp"
 #include "utils/str_cat.hpp"
+#include "utils/str_split.hpp"
 #include "utils/string_or_view.hpp"
 #include "utils/utf8.hpp"
 

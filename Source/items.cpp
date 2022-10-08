@@ -594,6 +594,7 @@ void CalcItemValue(Item &item)
 		v = item._ivalue / v;
 	}
 	v = item._iVAdd1 + item._iVAdd2 + v;
+
 	item._iIvalue = std::max(v, 1);
 }
 
@@ -1740,28 +1741,27 @@ void DrawUniqueInfoWindow(const Surface &out)
 void printItemMiscKBM(const Item &item, const bool isOil, const bool isCastOnTarget)
 {
 	if (item._iMiscId == IMISC_MAPOFDOOM) {
-		AddPanelString(_("Right-click to view"));
+		InfoString = StrCat(item._iName, "\n", _("Right-click to view"));
 	} else if (isOil) {
 		PrintItemOil(item._iMiscId);
-		AddPanelString(_("Right-click to use"));
+		InfoString = StrCat(item._iName, "\n", _("Right-click to use"));
 	} else if (isCastOnTarget) {
-		AddPanelString(_("Right-click to read, then"));
-		AddPanelString(_("left-click to target"));
+		InfoString = StrCat(item._iName, "\n", _("Right-click to read, then\nleft-click to target"));
 	} else if (IsAnyOf(item._iMiscId, IMISC_BOOK, IMISC_NOTE, IMISC_SCROLL, IMISC_SCROLLT)) {
-		AddPanelString(_("Right-click to read"));
+		InfoString = StrCat(item._iName, "\n", _("Right-click to read"));
 	}
 }
 
 void printItemMiscVirtualGamepad(const Item &item, const bool isOil, bool isCastOnTarget)
 {
 	if (item._iMiscId == IMISC_MAPOFDOOM) {
-		AddPanelString(_("Activate to view"));
+		InfoString = StrCat(item._iName, "\n", _("Activate to view"));
 	} else if (isOil) {
 		PrintItemOil(item._iMiscId);
 		if (!invflag) {
-			AddPanelString(_("Open inventory to use"));
+			InfoString = StrCat(item._iName, "\n", _("Open inventory to use"));
 		} else {
-			AddPanelString(_("Activate to use"));
+			InfoString = StrCat(item._iName, "\n", _("Activate to use"));
 		}
 	} else if (isCastOnTarget) {
 		AddPanelString(_("Select from spell book, then"));
@@ -1773,33 +1773,34 @@ void printItemMiscVirtualGamepad(const Item &item, const bool isOil, bool isCast
 
 void printItemMiscGamepad(const Item &item, bool isOil, bool isCastOnTarget)
 {
+	using namespace controllerButtonIcon;
 	std::string activateButton = "Activate";
 	std::string castButton = "Cast";
 
 	if (GamepadType == GamepadLayout::Xbox) {
-		activateButton = "Y";
-		castButton = "X";
+		activateButton = Xbox_Y;
+		castButton = Xbox_X;
 	} else if (GamepadType == GamepadLayout::PlayStation) {
-		activateButton = "Triangle";
-		castButton = "Square";
+		activateButton = Playstation_Triangle;
+		castButton = Playstation_Square;
 	} else if (GamepadType == GamepadLayout::Nintendo) {
-		activateButton = "Y";
-		castButton = "X";
+		activateButton = Nintendo_Y;
+		castButton = Nintendo_X;
 	}
 
 	if (item._iMiscId == IMISC_MAPOFDOOM) {
-		AddPanelString(fmt::format(fmt::runtime(_("{} to view")), activateButton));
+		InfoString = StrCat(item._iName, "\n", fmt::format(fmt::runtime(_("{} to view")), activateButton));
 	} else if (isOil) {
 		PrintItemOil(item._iMiscId);
 		if (!invflag) {
-			AddPanelString(_("Open inventory to use"));
+			InfoString = StrCat(item._iName, "\n", _("Open inventory to use"));
 		} else {
-			AddPanelString(fmt::format(fmt::runtime(_("{} to use")), activateButton));
+			InfoString = StrCat(item._iName, "\n", fmt::format(fmt::runtime(_("{} to use")), activateButton));
 		}
 	} else if (isCastOnTarget) {
-		AddPanelString(fmt::format(fmt::runtime(_("Select from spell book, then {} to read")), castButton));
+		InfoString = StrCat(item._iName, "\n", fmt::format(fmt::runtime(_("Select from spell book,\nthen {} to read")), castButton));
 	} else if (IsAnyOf(item._iMiscId, IMISC_BOOK, IMISC_NOTE, IMISC_SCROLL, IMISC_SCROLLT)) {
-		AddPanelString(fmt::format(fmt::runtime(_("{} to read")), activateButton));
+		InfoString = StrCat(item._iName, "\n", fmt::format(fmt::runtime(_("{} to read")), activateButton));
 	}
 }
 
@@ -2227,7 +2228,41 @@ int RndItemForMonsterLevel(int8_t monsterLevel)
 	int ril[512];
 
 	int ri = 0;
+
+	int pi = 0;
+
 	for (int i = 0; AllItemsList[i].iLoc != ILOC_INVALID; i++) {
+		const char healingPotions[4] = {
+			ICURS_POTION_OF_HEALING,
+			ICURS_POTION_OF_FULL_HEALING,
+			ICURS_POTION_OF_REJUVENATION,
+			ICURS_POTION_OF_FULL_REJUVENATION
+		};
+
+		const char manaPotions[4] = {
+			ICURS_POTION_OF_MANA,
+			ICURS_POTION_OF_FULL_MANA,
+			ICURS_POTION_OF_REJUVENATION,
+			ICURS_POTION_OF_FULL_REJUVENATION
+		};
+
+		bool isHealingPotion = false;
+		bool isManaPotion = false;
+
+		for (uint64_t j = 0; j < sizeof(healingPotions) / sizeof(healingPotions[0]); j++) {
+			if (AllItemsList[i].iCurs == healingPotions[i]) {
+				isHealingPotion = true;
+				break;
+			}
+		}
+
+		for (uint64_t j = 0; j < sizeof(manaPotions) / sizeof(manaPotions[0]); j++) {
+			if (AllItemsList[i].iCurs == manaPotions[i]) {
+				isManaPotion = true;
+				break;
+			}
+		}
+
 		if (!IsItemAvailable(i))
 			continue;
 
@@ -2245,6 +2280,23 @@ int RndItemForMonsterLevel(int8_t monsterLevel)
 			ri--;
 		if (AllItemsList[i].iSpell == SPL_HEALOTHER && !gbIsMultiplayer)
 			ri--;
+		if (*sgOptions.Gameplay.hpRegen || *sgOptions.Gameplay.manaRegen) {
+			if (isHealingPotion || isManaPotion) {
+				if (*sgOptions.Gameplay.hpRegen && isHealingPotion) {
+					pi++;
+				}
+
+				if (*sgOptions.Gameplay.manaRegen && isManaPotion) {
+					pi++;
+				}
+
+				if (pi > 2)
+					pi = 0;
+
+				if (pi != 2)
+					ri--;
+			}
+		}
 	}
 
 	int r = GenerateRnd(ri);
@@ -2986,6 +3038,45 @@ void GetItemAttrs(Item &item, int itemData, int lvl)
 
 	if (gbIsHellfire && item._iMiscId == IMISC_OILOF)
 		GetOilType(item, lvl);
+
+	if (*sgOptions.Gameplay.hpRegen || *sgOptions.Gameplay.manaRegen) {
+		const int initVal = item._ivalue;
+
+		if (*sgOptions.Gameplay.hpRegen) {
+			const uint8_t healingPotions[] = {
+				ICURS_POTION_OF_HEALING,
+				ICURS_POTION_OF_FULL_HEALING,
+				ICURS_POTION_OF_REJUVENATION,
+				ICURS_POTION_OF_FULL_REJUVENATION
+			};
+
+			for (uint8_t healingPotion : healingPotions) {
+				if (healingPotion == item._iCurs) {
+					item._ivalue *= 2;
+					item._iIvalue *= 2;
+					break;
+				}
+			}
+		}
+
+		if (*sgOptions.Gameplay.manaRegen) {
+			const uint8_t manaPotions[] = {
+				ICURS_POTION_OF_MANA,
+				ICURS_POTION_OF_FULL_MANA,
+				ICURS_POTION_OF_REJUVENATION,
+				ICURS_POTION_OF_FULL_REJUVENATION
+			};
+
+			for (uint8_t manaPotion : manaPotions) {
+				if (manaPotion == item._iCurs) {
+					const int xed = (int)round(item._ivalue * 2 > initVal * 2.5 ? initVal * 2.5 - 50 : item._ivalue * 2);
+					item._ivalue = xed;
+					item._iIvalue = xed;
+					break;
+				}
+			}
+		}
+	}
 
 	if (item._itype != ItemType::Gold)
 		return;
