@@ -1772,34 +1772,14 @@ void printItemMiscGenericGamepad(const Item &item, const bool isOil, bool isCast
 			InfoString = StrCat(item._iName, "\n", _("Activate to use"));
 		}
 	} else if (isCastOnTarget) {
-<<<<<<< HEAD
-		InfoString = StrCat(item._iName, "\n", _("Select from spell book, then\ncast to read"));
-	} else {
-		InfoString = StrCat(item._iName, "\n", _("Activate to read"));
-=======
 		AddPanelString(_("Select from spell book, then\ncast to read"));
 	} else if (IsAnyOf(item._iMiscId, IMISC_BOOK, IMISC_NOTE, IMISC_SCROLL, IMISC_SCROLLT)) {
 		AddPanelString(_("Activate to read"));
->>>>>>> upstream/master
 	}
 }
 
 void printItemMiscGamepad(const Item &item, bool isOil, bool isCastOnTarget)
 {
-<<<<<<< HEAD
-	std::string activateButton = "Activate";
-	std::string castButton = "Cast";
-
-	if (GamepadType == GamepadLayout::Xbox) {
-		activateButton = "Y";
-		castButton = "X";
-	} else if (GamepadType == GamepadLayout::PlayStation) {
-		activateButton = "\uE000";
-		castButton = "\uE000";
-	} else if (GamepadType == GamepadLayout::Nintendo) {
-		activateButton = "Y";
-		castButton = "X";
-=======
 	string_view activateButton;
 	string_view castButton;
 	switch (GamepadType) {
@@ -1818,7 +1798,6 @@ void printItemMiscGamepad(const Item &item, bool isOil, bool isCastOnTarget)
 		activateButton = controller_button_icon::Nintendo_X;
 		castButton = controller_button_icon::Nintendo_Y;
 		break;
->>>>>>> upstream/master
 	}
 
 	if (item._iMiscId == IMISC_MAPOFDOOM) {
@@ -1831,11 +1810,7 @@ void printItemMiscGamepad(const Item &item, bool isOil, bool isCastOnTarget)
 			InfoString = StrCat(item._iName, "\n", fmt::format(fmt::runtime(_("{} to use")), activateButton));
 		}
 	} else if (isCastOnTarget) {
-<<<<<<< HEAD
-		InfoString = StrCat(item._iName, "\n", fmt::format(fmt::runtime(_("Select from spell book,\nthen {} to read")), castButton));
-=======
 		AddPanelString(fmt::format(fmt::runtime(_("Select from spell book,\nthen {} to read")), castButton));
->>>>>>> upstream/master
 	} else if (IsAnyOf(item._iMiscId, IMISC_BOOK, IMISC_NOTE, IMISC_SCROLL, IMISC_SCROLLT)) {
 		InfoString = StrCat(item._iName, "\n", fmt::format(fmt::runtime(_("{} to read")), activateButton));
 	}
@@ -2270,14 +2245,8 @@ _item_indexes RndItemForMonsterLevel(int8_t monsterLevel)
 
 	static std::array<_item_indexes, 512> ril;
 
-<<<<<<< HEAD
-	int ri = 0;
-
-	for (int i = 0; AllItemsList[i].iLoc != ILOC_INVALID; i++) {
-=======
 	size_t ri = 0;
 	for (std::underlying_type_t<_item_indexes> i = IDI_GOLD; i <= IDI_LAST; i++) {
->>>>>>> upstream/master
 		if (!IsItemAvailable(i))
 			continue;
 
