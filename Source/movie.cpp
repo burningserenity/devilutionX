@@ -7,6 +7,7 @@
 #include "controls/plrctrls.h"
 #include "diablo.h"
 #include "effects.h"
+#include "engine/backbuffer_state.hpp"
 #include "engine/demomode.h"
 #include "engine/sound.h"
 #include "hwcursor.hpp"
@@ -41,6 +42,9 @@ void play_movie(const char *pszMovie, bool userCanClose)
 		uint16_t modState;
 		while (movie_playing) {
 			while (movie_playing && FetchMessage(&event, &modState)) {
+				ControllerButtonEvent ctrlEvent = ToControllerButtonEvent(event);
+				if (userCanClose && SkipsMovie(ctrlEvent))
+					movie_playing = false;
 				switch (event.type) {
 				case SDL_KEYDOWN:
 				case SDL_MOUSEBUTTONUP:
@@ -71,10 +75,10 @@ void PlayInGameMovie(const char *pszMovie)
 	PaletteFadeOut(8);
 	play_movie(pszMovie, false);
 	ClearScreenBuffer();
-	force_redraw = 255;
+	RedrawEverything();
 	scrollrt_draw_game_screen();
 	PaletteFadeIn(8);
-	force_redraw = 255;
+	RedrawEverything();
 }
 
 } // namespace devilution

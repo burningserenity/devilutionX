@@ -66,7 +66,6 @@ extern bool ReturnToMainMenu;
 extern bool gbProcessPlayers;
 extern DVL_API_FOR_TEST bool gbLoadGame;
 extern bool cineflag;
-extern int force_redraw;
 /* These are defined in fonts.h */
 extern void FontsCleanup();
 extern DVL_API_FOR_TEST int PauseMode;
@@ -99,7 +98,7 @@ void LoadGameLevel(bool firstflag, lvl_entry lvldir);
 /**
  * @param bStartup Process additional ticks before returning
  */
-void game_loop(bool bStartup);
+bool game_loop(bool bStartup);
 void diablo_color_cyc_logic();
 
 /* rdata */

@@ -14,6 +14,7 @@
 #include "engine/dx.h"
 #include "engine/load_cel.hpp"
 #include "engine/load_clx.hpp"
+#include "engine/load_pcx.hpp"
 #include "engine/palette.h"
 #include "engine/render/clx_render.hpp"
 #include "hwcursor.hpp"
@@ -47,6 +48,28 @@ OptionalOwnedClxSpriteList ArtCutsceneWidescreen;
 uint32_t CustomEventsBegin = SDL_USEREVENT;
 constexpr uint32_t NumCustomEvents = WM_LAST - WM_FIRST + 1;
 
+Cutscenes GetCutSceneFromLevelType(dungeon_type type)
+{
+	switch (type) {
+	case DTYPE_TOWN:
+		return CutTown;
+	case DTYPE_CATHEDRAL:
+		return CutLevel1;
+	case DTYPE_CATACOMBS:
+		return CutLevel2;
+	case DTYPE_CAVES:
+		return CutLevel3;
+	case DTYPE_HELL:
+		return CutLevel4;
+	case DTYPE_NEST:
+		return CutLevel6;
+	case DTYPE_CRYPT:
+		return CutLevel5;
+	default:
+		return CutLevel1;
+	}
+}
+
 Cutscenes PickCutscene(interface_mode uMsg)
 {
 	switch (uMsg) {
@@ -64,25 +87,7 @@ Cutscenes PickCutscene(interface_mode uMsg)
 			return CutTown;
 		if (lvl == 16 && uMsg == WM_DIABNEXTLVL)
 			return CutGate;
-
-		switch (GetLevelType(lvl)) {
-		case DTYPE_TOWN:
-			return CutTown;
-		case DTYPE_CATHEDRAL:
-			return CutLevel1;
-		case DTYPE_CATACOMBS:
-			return CutLevel2;
-		case DTYPE_CAVES:
-			return CutLevel3;
-		case DTYPE_HELL:
-			return CutLevel4;
-		case DTYPE_NEST:
-			return CutLevel6;
-		case DTYPE_CRYPT:
-			return CutLevel5;
-		default:
-			return CutLevel1;
-		}
+		return GetCutSceneFromLevelType(GetLevelType(lvl));
 	}
 	case WM_DIABWARPLVL:
 		return CutPortal;
@@ -92,6 +97,11 @@ Cutscenes PickCutscene(interface_mode uMsg)
 			return CutLevel2;
 		if (setlvlnum == SL_VILEBETRAYER)
 			return CutPortalRed;
+		if (IsArenaLevel(setlvlnum)) {
+			if (uMsg == WM_DIABSETLVL)
+				return GetCutSceneFromLevelType(setlvltype);
+			return CutTown;
+		}
 		return CutLevel1;
 	default:
 		app_fatal("Unknown progress mode");
@@ -105,60 +115,60 @@ void LoadCutsceneBackground(interface_mode uMsg)
 
 	switch (PickCutscene(uMsg)) {
 	case CutStart:
-		ArtCutsceneWidescreen = LoadOptionalClx("gendata\\cutstartw.pcx");
-		celPath = "gendata\\cutstart.cel";
+		ArtCutsceneWidescreen = LoadOptionalClx("gendata\\cutstartw.clx");
+		celPath = "gendata\\cutstart";
 		palPath = "gendata\\cutstart.pal";
 		progress_id = 1;
 		break;
 	case CutTown:
-		celPath = "gendata\\cuttt.cel";
+		celPath = "gendata\\cuttt";
 		palPath = "gendata\\cuttt.pal";
 		progress_id = 1;
 		break;
 	case CutLevel1:
-		celPath = "gendata\\cutl1d.cel";
+		celPath = "gendata\\cutl1d";
 		palPath = "gendata\\cutl1d.pal";
 		progress_id = 0;
 		break;
 	case CutLevel2:
-		celPath = "gendata\\cut2.cel";
+		celPath = "gendata\\cut2";
 		palPath = "gendata\\cut2.pal";
 		progress_id = 2;
 		break;
 	case CutLevel3:
-		celPath = "gendata\\cut3.cel";
+		celPath = "gendata\\cut3";
 		palPath = "gendata\\cut3.pal";
 		progress_id = 1;
 		break;
 	case CutLevel4:
-		celPath = "gendata\\cut4.cel";
+		celPath = "gendata\\cut4";
 		palPath = "gendata\\cut4.pal";
 		progress_id = 1;
 		break;
 	case CutLevel5:
-		celPath = "nlevels\\cutl5.cel";
+		celPath = "nlevels\\cutl5";
 		palPath = "nlevels\\cutl5.pal";
 		progress_id = 1;
 		break;
 	case CutLevel6:
-		celPath = "nlevels\\cutl6.cel";
+		celPath = "nlevels\\cutl6";
 		palPath = "nlevels\\cutl6.pal";
 		progress_id = 1;
 		break;
 	case CutPortal:
-		ArtCutsceneWidescreen = LoadOptionalClx("gendata\\cutportlw.pcx");
-		celPath = "gendata\\cutportl.cel";
+		ArtCutsceneWidescreen = LoadOptionalClx("gendata\\cutportlw.clx");
+		celPath = "gendata\\cutportl";
 		palPath = "gendata\\cutportl.pal";
 		progress_id = 1;
 		break;
 	case CutPortalRed:
-		ArtCutsceneWidescreen = LoadOptionalClx("gendata\\cutportrw.pcx");
-		celPath = "gendata\\cutportr.cel";
+		ArtCutsceneWidescreen = LoadOptionalClx("gendata\\cutportrw.clx");
+		celPath = "gendata\\cutportr";
 		palPath = "gendata\\cutportr.pal";
 		progress_id = 1;
 		break;
 	case CutGate:
-		celPath = "gendata\\cutgate.cel";
+		celPath = "gendata\\cutgate";
 		palPath = "gendata\\cutgate.pal";
 		progress_id = 1;
 		break;
@@ -283,13 +293,17 @@ void ShowProgress(interface_mode uMsg)
 		// Blit the background once and then free it.
 		LoadCutsceneBackground(uMsg);
 		DrawCutsceneBackground();
-		if (RenderDirectlyToOutputSurface && IsDoubleBuffered()) {
-			// Blit twice for triple buffering.
-			for (unsigned i = 0; i < 2; ++i) {
+		if (RenderDirectlyToOutputSurface && PalSurface != nullptr) {
+			// Render into all the backbuffers if there are multiple.
+			const void *initialPixels = PalSurface->pixels;
+			if (DiabloUiSurface() == PalSurface)
+				BltFast(nullptr, nullptr);
+			RenderPresent();
+			while (PalSurface->pixels != initialPixels) {
+				DrawCutsceneBackground();
 				if (DiabloUiSurface() == PalSurface)
 					BltFast(nullptr, nullptr);
 				RenderPresent();
-				DrawCutsceneBackground();
 			}
 		}
 		FreeCutsceneBackground();
@@ -452,6 +466,17 @@ void ShowProgress(interface_mode uMsg)
 
 	if (!HeadlessMode) {
 		assert(ghMainWnd);
+
+		if (RenderDirectlyToOutputSurface && PalSurface != nullptr) {
+			// Ensure that all back buffers have the full progress bar.
+			const void *initialPixels = PalSurface->pixels;
+			do {
+				DrawCutsceneForeground();
+				if (DiabloUiSurface() == PalSurface)
+					BltFast(nullptr, nullptr);
+				RenderPresent();
+			} while (PalSurface->pixels != initialPixels);
+		}
 
 		PaletteFadeOut(8);
 	}

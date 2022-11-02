@@ -10,6 +10,7 @@
 #ifdef _DEBUG
 #include "debug.h"
 #endif
+#include "engine/backbuffer_state.hpp"
 #include "engine/point.hpp"
 #include "engine/random.hpp"
 #include "gamemenu.h"
@@ -56,12 +57,12 @@ void ClearReadiedSpell(Player &player)
 {
 	if (player._pRSpell != SPL_INVALID) {
 		player._pRSpell = SPL_INVALID;
-		force_redraw = 255;
+		RedrawEverything();
 	}
 
 	if (player._pRSplType != RSPLTYPE_INVALID) {
 		player._pRSplType = RSPLTYPE_INVALID;
-		force_redraw = 255;
+		RedrawEverything();
 	}
 }
 
@@ -195,8 +196,14 @@ void ConsumeSpell(Player &player, spell_id sn)
 		}
 		player._pMana -= ma;
 		player._pManaBase -= ma;
-		drawmanaflag = true;
+		RedrawComponent(PanelDrawComponent::Mana);
 		break;
+	}
+	if (sn == SPL_FLARE) {
+		ApplyPlrDamage(player, 5);
+	}
+	if (sn == SPL_BONESPIRIT) {
+		ApplyPlrDamage(player, 6);
 	}
 }
 
@@ -241,18 +248,19 @@ void CastSpell(int id, spell_id spl, int sx, int sy, int dx, int dy, int spllvl)
 		dir = player.tempDirection;
 	}
 
+	bool fizzled = false;
 	for (int i = 0; i < 3 && spelldata[spl].sMissiles[i] != MIS_NULL; i++) {
-		AddMissile({ sx, sy }, { dx, dy }, dir, spelldata[spl].sMissiles[i], TARGET_MONSTERS, id, 0, spllvl);
+		Missile *missile = AddMissile({ sx, sy }, { dx, dy }, dir, spelldata[spl].sMissiles[i], TARGET_MONSTERS, id, 0, spllvl);
+		fizzled |= (missile == nullptr);
 	}
-
-	if (spl == SPL_TOWN) {
-		ConsumeSpell(player, SPL_TOWN);
-	} else if (spl == SPL_CBOLT) {
-		ConsumeSpell(player, SPL_CBOLT);
-
+	if (spl == SPL_CBOLT) {
 		for (int i = (spllvl / 2) + 3; i > 0; i--) {
-			AddMissile({ sx, sy }, { dx, dy }, dir, MIS_CBOLT, TARGET_MONSTERS, id, 0, spllvl);
+			Missile *missile = AddMissile({ sx, sy }, { dx, dy }, dir, MIS_CBOLT, TARGET_MONSTERS, id, 0, spllvl);
+			fizzled |= (missile == nullptr);
 		}
+	}
+	if (!fizzled) {
+		ConsumeSpell(player, spl);
 	}
 }
 
@@ -270,8 +278,8 @@ void DoResurrect(size_t pnum, Player &target)
 	if (&target == MyPlayer) {
 		MyPlayerIsDead = false;
 		gamemenu_off();
-		drawhpflag = true;
-		drawmanaflag = true;
+		RedrawComponent(PanelDrawComponent::Health);
+		RedrawComponent(PanelDrawComponent::Mana);
 	}
 
 	ClrPlrPath(target);
@@ -324,7 +332,7 @@ void DoHealOther(const Player &caster, Player &target)
 	target._pHPBase = std::min(target._pHPBase + hp, target._pMaxHPBase);
 
 	if (&target == MyPlayer) {
-		drawhpflag = true;
+		RedrawComponent(PanelDrawComponent::Health);
 	}
 }
 

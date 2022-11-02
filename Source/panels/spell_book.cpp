@@ -3,6 +3,7 @@
 #include <fmt/format.h>
 
 #include "control.h"
+#include "engine/backbuffer_state.hpp"
 #include "engine/clx_sprite.hpp"
 #include "engine/load_cel.hpp"
 #include "engine/rectangle.hpp"
@@ -81,9 +82,9 @@ spell_type GetSBookTrans(spell_id ii, bool townok)
 
 void InitSpellBook()
 {
-	pSpellBkCel = LoadCel("data\\spellbk.cel", static_cast<uint16_t>(SidePanelSize.width));
-	pSBkBtnCel = LoadCel("data\\spellbkb.cel", gbIsHellfire ? 61 : 76);
-	pSBkIconCels = LoadCel("data\\spelli2.cel", 37);
+	pSpellBkCel = LoadCel("data\\spellbk", static_cast<uint16_t>(SidePanelSize.width));
+	pSBkBtnCel = LoadCel("data\\spellbkb", gbIsHellfire ? 61 : 76);
+	pSBkIconCels = LoadCel("data\\spelli2", 37);
 
 	Player &player = *MyPlayer;
 	if (player._pClass == HeroClass::Warrior) {
@@ -202,7 +203,7 @@ void CheckSBook()
 			}
 			player._pRSpell = sn;
 			player._pRSplType = st;
-			force_redraw = 255;
+			RedrawEverything();
 		}
 		return;
 	}

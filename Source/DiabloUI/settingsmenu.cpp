@@ -46,9 +46,9 @@ enum class SpecialMenuEntry : int8_t {
 bool IsValidEntry(OptionEntryBase *pOptionEntry)
 {
 	auto flags = pOptionEntry->GetFlags();
-	if (HasAnyOf(flags, OptionEntryFlags::NeedDiabloMpq) && !diabdat_mpq)
+	if (HasAnyOf(flags, OptionEntryFlags::NeedDiabloMpq) && !HaveDiabdat())
 		return false;
-	if (HasAnyOf(flags, OptionEntryFlags::NeedHellfireMpq) && !hellfire_mpq)
+	if (HasAnyOf(flags, OptionEntryFlags::NeedHellfireMpq) && !HaveHellfire())
 		return false;
 	return HasNoneOf(flags, OptionEntryFlags::Invisible | (gbIsHellfire ? OptionEntryFlags::OnlyDiablo : OptionEntryFlags::OnlyHellfire));
 }
@@ -128,6 +128,7 @@ bool ChangeOptionValue(OptionEntryBase *pOption, size_t listIndex)
 		pOptionList->SetActiveListIndex(listIndex);
 	} break;
 	case OptionEntryType::Key:
+	case OptionEntryType::PadButton:
 		break;
 	}
 

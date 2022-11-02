@@ -59,6 +59,7 @@ set(libdevilutionx_SRCS
 
   controls/axis_direction.cpp
   controls/controller.cpp
+  controls/controller_buttons.cpp
   controls/controller_motion.cpp
   controls/devices/joystick.cpp
   controls/devices/kbcontroller.cpp
@@ -95,6 +96,7 @@ set(libdevilutionx_SRCS
   engine/actor_position.cpp
   engine/animationinfo.cpp
   engine/assets.cpp
+  engine/backbuffer_state.cpp
   engine/direction.cpp
   engine/dx.cpp
   engine/load_cel.cpp

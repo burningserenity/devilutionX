@@ -83,10 +83,9 @@ enum item_color : uint8_t {
 };
 
 extern bool invflag;
-extern bool drawsbarflag;
 extern const Point InvRect[73];
 
-void InvDrawSlotBack(const Surface &out, Point targetPosition, Size size);
+void InvDrawSlotBack(const Surface &out, Point targetPosition, Size size, item_quality itemQuality);
 /**
  * @brief Checks whether the given item can be placed on the belt. Takes item size as well as characteristics into account. Items
  * that cannot be placed on the belt have to be placed in the inventory instead.
@@ -224,9 +223,7 @@ void SyncGetItem(Point position, int32_t iseed, _item_indexes idx, uint16_t ci);
 bool CanPut(Point position);
 
 int InvPutItem(const Player &player, Point position, const Item &item);
-int SyncPutItem(const Player &player, Point position, int idx, uint16_t icreateinfo, int iseed, int Id, int dur, int mdur, int ch, int mch, int ivalue, uint32_t ibuff, int toHit, int maxDam, int minStr, int minMag, int minDex, int ac);
-int SyncDropItem(Point position, int idx, uint16_t icreateinfo, int iseed, int id, int dur, int mdur, int ch, int mch, int ivalue, uint32_t ibuff, int toHit, int maxDam, int minStr, int minMag, int minDex, int ac);
-int SyncPutEar(const Player &player, Point position, uint16_t icreateinfo, int iseed, uint8_t cursval, string_view heroname);
+int SyncDropItem(Point position, _item_indexes idx, uint16_t icreateinfo, int iseed, int id, int dur, int mdur, int ch, int mch, int ivalue, uint32_t ibuff, int toHit, int maxDam, int minStr, int minMag, int minDex, int ac);
 int SyncDropEar(Point position, uint16_t icreateinfo, int iseed, uint8_t cursval, string_view heroname);
 int8_t CheckInvHLight();
 bool CanUseScroll(Player &player, spell_id spell);

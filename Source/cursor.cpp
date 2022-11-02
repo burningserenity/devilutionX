@@ -12,6 +12,7 @@
 #include "controls/plrctrls.h"
 #include "doom.h"
 #include "engine.h"
+#include "engine/backbuffer_state.hpp"
 #include "engine/load_cel.hpp"
 #include "engine/point.hpp"
 #include "engine/render/clx_render.hpp"
@@ -132,9 +133,9 @@ int pcurs;
 void InitCursor()
 {
 	assert(!pCursCels);
-	pCursCels = LoadCel("data\\inv\\objcurs.cel", InvItemWidth1);
+	pCursCels = LoadCel("data\\inv\\objcurs", InvItemWidth1);
 	if (gbIsHellfire)
-		pCursCels2 = LoadCel("data\\inv\\objcurs2.cel", InvItemWidth2);
+		pCursCels2 = LoadCel("data\\inv\\objcurs2", InvItemWidth2);
 	ClearCursor();
 }
 
@@ -362,7 +363,7 @@ void CheckCursMove()
 	const Point currentTile { mx, my };
 
 	// While holding the button down we should retain target (but potentially lose it if it dies, goes out of view, etc)
-	if ((sgbMouseDown != CLICK_NONE || ControllerButtonHeld != ControllerButton_NONE) && IsNoneOf(LastMouseButtonAction, MouseActionType::None, MouseActionType::Attack, MouseActionType::Spell)) {
+	if ((sgbMouseDown != CLICK_NONE || ControllerActionHeld != GameActionType_NONE) && IsNoneOf(LastMouseButtonAction, MouseActionType::None, MouseActionType::Attack, MouseActionType::Spell)) {
 		InvalidateTargets();
 
 		if (pcursmonst == -1 && ObjectUnderCursor == nullptr && pcursitem == -1 && pcursinvitem == -1 && pcursstashitem == uint16_t(-1) && pcursplr == -1) {
@@ -381,7 +382,7 @@ void CheckCursMove()
 	ObjectUnderCursor = nullptr;
 	pcursitem = -1;
 	if (pcursinvitem != -1) {
-		drawsbarflag = true;
+		RedrawComponent(PanelDrawComponent::Belt);
 	}
 	pcursinvitem = -1;
 	pcursstashitem = uint16_t(-1);

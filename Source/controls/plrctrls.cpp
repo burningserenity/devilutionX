@@ -26,6 +26,7 @@
 #include "hwcursor.hpp"
 #include "inv.h"
 #include "items.h"
+#include "levels/town.h"
 #include "levels/trigs.h"
 #include "minitext.h"
 #include "missiles.h"
@@ -45,8 +46,17 @@ namespace devilution {
 
 ControlTypes ControlMode = ControlTypes::None;
 ControlTypes ControlDevice = ControlTypes::None;
-ControllerButton ControllerButtonHeld = ControllerButton_NONE;
-GamepadLayout GamepadType = GamepadLayout::Generic;
+GameActionType ControllerActionHeld = GameActionType_NONE;
+GamepadLayout GamepadType =
+#if defined(DEVILUTIONX_GAMEPAD_TYPE)
+    GamepadLayout::
+        DEVILUTIONX_GAMEPAD_TYPE;
+#else
+    GamepadLayout::Generic;
+#endif
+
+bool StandToggle = false;
+
 int pcurstrig = -1;
 Missile *pcursmissile = nullptr;
 quest_id pcursquest = Q_INVALID;
@@ -143,12 +153,12 @@ int GetDistanceRanged(Point destination)
 
 void FindItemOrObject()
 {
-	Point futurePosition = MyPlayer->position.future;
+	WorldTilePosition futurePosition = MyPlayer->position.future;
 	int rotations = 5;
 
-	auto searchArea = PointsInRectangleRangeColMajor { Rectangle { futurePosition, 1 } };
+	auto searchArea = PointsInRectangleColMajor(WorldTileRectangle { futurePosition, 1 });
 
-	for (Point targetPosition : searchArea) {
+	for (WorldTilePosition targetPosition : searchArea) {
 		// As the player can not stand on the edge of the map this is safe from OOB
 		int8_t itemId = dItem[targetPosition.x][targetPosition.y] - 1;
 		if (itemId < 0) {
@@ -178,7 +188,7 @@ void FindItemOrObject()
 		return; // Don't look for objects in town
 	}
 
-	for (Point targetPosition : searchArea) {
+	for (WorldTilePosition targetPosition : searchArea) {
 		Object *object = FindObjectAtPosition(targetPosition);
 		if (object == nullptr || object->_oSelFlag == 0) {
 			// No object or non-interactive object
@@ -481,8 +491,12 @@ void Interact()
 		return;
 	}
 
-	bool stand = false;
+	bool stand = StandToggle;
 #ifndef USE_SDL1
+	if (ControlMode == ControlTypes::Gamepad) {
+		ControllerButtonCombo standGroundCombo = sgOptions.Padmapper.ButtonComboForAction("StandGround");
+		stand = IsControllerButtonComboPressed(standGroundCombo);
+	}
 	if (ControlMode == ControlTypes::VirtualGamepad) {
 		stand = VirtualGamepadState.standButton.isHeld;
 	}
@@ -694,7 +708,7 @@ Point FindFirstStashSlotOnItem(StashStruct::StashCell itemInvId)
 	if (itemInvId == StashStruct::EmptyCell)
 		return InvalidStashPoint;
 
-	for (auto point : PointsInRectangleRange({ { 0, 0 }, Size { 10, 10 } })) {
+	for (WorldTilePosition point : PointsInRectangle(WorldTileRectangle { { 0, 0 }, { 10, 10 } })) {
 		if (Stash.GetItemIdAtPosition(point) == itemInvId)
 			return point;
 	}
@@ -763,7 +777,7 @@ Point FindClosestStashSlot(Point mousePos)
 	Point bestSlot = {};
 	mousePos += Displacement { -INV_SLOT_HALF_SIZE_PX, -INV_SLOT_HALF_SIZE_PX };
 
-	for (auto point : PointsInRectangleRange({ { 0, 0 }, Size { 10, 10 } })) {
+	for (Point point : PointsInRectangle(Rectangle { { 0, 0 }, Size { 10, 10 } })) {
 		int distance = mousePos.ManhattanDistance(GetStashSlotCoord(point));
 		if (distance < shortestDistance) {
 			shortestDistance = distance;
@@ -1048,6 +1062,28 @@ void CheckInventoryMove(AxisDirection dir)
 		return;
 
 	InventoryMove(dir);
+}
+
+/**
+ * @brief Try to clean the inventory related cursor states.
+ * @return True if it is safe to close the inventory
+ */
+bool BlurInventory()
+{
+	if (!MyPlayer->HoldItem.isEmpty()) {
+		if (!TryDropItem()) {
+			MyPlayer->Say(HeroSpeech::WhereWouldIPutThis);
+			return false;
+		}
+	}
+
+	CloseInventory();
+	if (pcurs > CURSOR_HAND)
+		NewCursor(CURSOR_HAND);
+	if (chrflag)
+		FocusOnCharInfo();
+
+	return true;
 }
 
 void StashMove(AxisDirection dir)
@@ -1353,14 +1389,12 @@ void ProcessLeftStickOrDPadGameUI()
 {
 	HandleLeftStickOrDPadFn handler = GetLeftStickOrDPadGameUIHandler();
 	if (handler != nullptr)
-		handler(GetLeftStickOrDpadDirection(true));
+		handler(GetLeftStickOrDpadDirection(false));
 }
 
 void Movement(size_t playerId)
 {
-	if (InGameMenu()
-	    || IsControllerButtonPressed(ControllerButton_BUTTON_START)
-	    || IsControllerButtonPressed(ControllerButton_BUTTON_BACK))
+	if (PadMenuNavigatorActive || PadHotspellMenuActive || InGameMenu())
 		return;
 
 	if (GetLeftStickOrDPadGameUIHandler() == nullptr) {
@@ -1447,7 +1481,7 @@ float rightStickLastMove = 0;
 
 bool ContinueSimulatedMouseEvent(const SDL_Event &event, const ControllerButtonEvent &gamepadEvent)
 {
-	if (IsAutomapActive())
+	if (AutomapActive)
 		return false;
 
 #if !defined(USE_SDL1) && !defined(JOY_AXIS_RIGHTX) && !defined(JOY_AXIS_RIGHTY)
@@ -1462,7 +1496,7 @@ bool ContinueSimulatedMouseEvent(const SDL_Event &event, const ControllerButtonE
 		return true;
 	}
 
-	return SimulatingMouseWithSelectAndDPad || IsSimulatedMouseClickBinding(gamepadEvent);
+	return SimulatingMouseWithPadmapper || IsSimulatedMouseClickBinding(gamepadEvent);
 }
 
 string_view ControlTypeToString(ControlTypes controlType)
@@ -1578,9 +1612,83 @@ void DetectInputMethod(const SDL_Event &event, const ControllerButtonEvent &game
 	}
 }
 
-bool IsAutomapActive()
+void ProcessGameAction(const GameAction &action)
 {
-	return AutomapActive && leveltype != DTYPE_TOWN;
+	switch (action.type) {
+	case GameActionType_NONE:
+	case GameActionType_SEND_KEY:
+		break;
+	case GameActionType_USE_HEALTH_POTION:
+		UseBeltItem(BLT_HEALING);
+		break;
+	case GameActionType_USE_MANA_POTION:
+		UseBeltItem(BLT_MANA);
+		break;
+	case GameActionType_PRIMARY_ACTION:
+		PerformPrimaryAction();
+		break;
+	case GameActionType_SECONDARY_ACTION:
+		PerformSecondaryAction();
+		break;
+	case GameActionType_CAST_SPELL:
+		PerformSpellAction();
+		break;
+	case GameActionType_TOGGLE_QUICK_SPELL_MENU:
+		if (!invflag || BlurInventory()) {
+			if (!spselflag)
+				DoSpeedBook();
+			else
+				spselflag = false;
+			chrflag = false;
+			QuestLogIsOpen = false;
+			sbookflag = false;
+			CloseGoldWithdraw();
+			IsStashOpen = false;
+		}
+		break;
+	case GameActionType_TOGGLE_CHARACTER_INFO:
+		chrflag = !chrflag;
+		if (chrflag) {
+			QuestLogIsOpen = false;
+			CloseGoldWithdraw();
+			IsStashOpen = false;
+			spselflag = false;
+			if (pcurs == CURSOR_DISARM)
+				NewCursor(CURSOR_HAND);
+			FocusOnCharInfo();
+		}
+		break;
+	case GameActionType_TOGGLE_QUEST_LOG:
+		if (!QuestLogIsOpen) {
+			StartQuestlog();
+			chrflag = false;
+			CloseGoldWithdraw();
+			IsStashOpen = false;
+			spselflag = false;
+		} else {
+			QuestLogIsOpen = false;
+		}
+		break;
+	case GameActionType_TOGGLE_INVENTORY:
+		if (invflag) {
+			BlurInventory();
+		} else {
+			sbookflag = false;
+			spselflag = false;
+			invflag = true;
+			if (pcurs == CURSOR_DISARM)
+				NewCursor(CURSOR_HAND);
+			FocusOnInventory();
+		}
+		break;
+	case GameActionType_TOGGLE_SPELL_BOOK:
+		if (BlurInventory()) {
+			CloseInventory();
+			spselflag = false;
+			sbookflag = !sbookflag;
+		}
+		break;
+	}
 }
 
 void HandleRightStickMotion()
@@ -1592,7 +1700,7 @@ void HandleRightStickMotion()
 		return;
 	}
 
-	if (IsAutomapActive()) { // move map
+	if (AutomapActive) { // move map
 		int dx = 0;
 		int dy = 0;
 		acc.Pool(&dx, &dy, 32);
@@ -1660,7 +1768,7 @@ void plrctrls_after_check_curs_move()
 	}
 
 	// While holding the button down we should retain target (but potentially lose it if it dies, goes out of view, etc)
-	if (ControllerButtonHeld != ControllerButton_NONE && IsNoneOf(LastMouseButtonAction, MouseActionType::None, MouseActionType::Attack, MouseActionType::Spell)) {
+	if (ControllerActionHeld != GameActionType_NONE && IsNoneOf(LastMouseButtonAction, MouseActionType::None, MouseActionType::Attack, MouseActionType::Spell)) {
 		InvalidateTargets();
 
 		if (pcursmonst == -1 && ObjectUnderCursor == nullptr && pcursitem == -1 && pcursinvitem == -1 && pcursstashitem == uint16_t(-1) && pcursplr == -1) {
@@ -1774,7 +1882,7 @@ void PerformPrimaryAction()
 			StashStruct::StashCell itemUnderCursor = [](Point stashSlot, Size cursorSizeInCells) -> StashStruct::StashCell {
 				if (stashSlot != InvalidStashPoint)
 					return StashStruct::EmptyCell;
-				for (Point slotUnderCursor : PointsInRectangleRange { { stashSlot, cursorSizeInCells } }) {
+				for (Point slotUnderCursor : PointsInRectangle(Rectangle { stashSlot, cursorSizeInCells })) {
 					if (slotUnderCursor.x >= 10 || slotUnderCursor.y >= 10)
 						continue;
 					StashStruct::StashCell itemId = Stash.GetItemIdAtPosition(slotUnderCursor);
@@ -1858,25 +1966,24 @@ bool TryDropItem()
 
 	if (leveltype == DTYPE_TOWN) {
 		if (UseItemOpensHive(myPlayer.HoldItem, myPlayer.position.tile)) {
-			NetSendCmdPItem(true, CMD_PUTITEM, { 79, 61 }, myPlayer.HoldItem.pop());
+			OpenHive();
 			NewCursor(CURSOR_HAND);
 			return true;
 		}
-		if (UseItemOpensCrypt(myPlayer.HoldItem, myPlayer.position.tile)) {
-			NetSendCmdPItem(true, CMD_PUTITEM, { 35, 20 }, myPlayer.HoldItem.pop());
+		if (UseItemOpensGrave(myPlayer.HoldItem, myPlayer.position.tile)) {
+			OpenGrave();
 			NewCursor(CURSOR_HAND);
 			return true;
 		}
 	}
 
-	Point position = myPlayer.position.future;
-	Direction direction = myPlayer._pdir;
-	if (!FindAdjacentPositionForItem(position, direction)) {
+	std::optional<Point> itemTile = FindAdjacentPositionForItem(myPlayer.position.future, myPlayer._pdir);
+	if (!itemTile) {
 		myPlayer.Say(HeroSpeech::WhereWouldIPutThis);
 		return false;
 	}
 
-	NetSendCmdPItem(true, CMD_PUTITEM, position + direction, myPlayer.HoldItem);
+	NetSendCmdPItem(true, CMD_PUTITEM, *itemTile, myPlayer.HoldItem);
 	myPlayer.HoldItem.clear();
 	NewCursor(CURSOR_HAND);
 	return true;

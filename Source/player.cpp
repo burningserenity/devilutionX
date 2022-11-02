@@ -16,6 +16,7 @@
 #ifdef _DEBUG
 #include "debug.h"
 #endif
+#include "engine/backbuffer_state.hpp"
 #include "engine/load_cl2.hpp"
 #include "engine/load_file.hpp"
 #include "engine/points_in_rectangle_range.hpp"
@@ -185,12 +186,12 @@ constexpr int8_t PlrGFXAnimLens[enum_size<HeroClass>::value][11] = {
 };
 
 const char *const ClassPathTbl[] = {
-	"Warrior",
-	"Rogue",
-	"Sorceror",
-	"Monk",
-	"Rogue",
-	"Warrior",
+	"warrior",
+	"rogue",
+	"sorceror",
+	"monk",
+	"rogue",
+	"warrior",
 };
 
 void PmChangeLightOff(Player &player)
@@ -441,6 +442,9 @@ void StartSpell(Player &player, Direction d, WorldTileCoord cx, WorldTileCoord c
 		break;
 	case RSPLTYPE_CHARGES:
 		isValid = CanUseStaff(player, player.queuedSpell.spellId);
+		break;
+	case RSPLTYPE_INVALID:
+		isValid = false;
 		break;
 	}
 	if (!isValid)
@@ -838,7 +842,7 @@ bool PlrHitMonst(Player &player, Monster &monster, bool adjacentDamage = false)
 		if (player._pHPBase > player._pMaxHPBase) {
 			player._pHPBase = player._pMaxHPBase;
 		}
-		drawhpflag = true;
+		RedrawComponent(PanelDrawComponent::Health);
 	}
 	if (HasAnyOf(player._pIFlags, ItemSpecialEffect::StealMana3 | ItemSpecialEffect::StealMana5) && HasNoneOf(player._pIFlags, ItemSpecialEffect::NoMana)) {
 		if (HasAnyOf(player._pIFlags, ItemSpecialEffect::StealMana3)) {
@@ -855,7 +859,7 @@ bool PlrHitMonst(Player &player, Monster &monster, bool adjacentDamage = false)
 		if (player._pManaBase > player._pMaxManaBase) {
 			player._pManaBase = player._pMaxManaBase;
 		}
-		drawmanaflag = true;
+		RedrawComponent(PanelDrawComponent::Mana);
 	}
 	if (HasAnyOf(player._pIFlags, ItemSpecialEffect::StealLife3 | ItemSpecialEffect::StealLife5)) {
 		if (HasAnyOf(player._pIFlags, ItemSpecialEffect::StealLife3)) {
@@ -872,7 +876,7 @@ bool PlrHitMonst(Player &player, Monster &monster, bool adjacentDamage = false)
 		if (player._pHPBase > player._pMaxHPBase) {
 			player._pHPBase = player._pMaxHPBase;
 		}
-		drawhpflag = true;
+		RedrawComponent(PanelDrawComponent::Health);
 	}
 #ifdef _DEBUG
 	if (DebugGodMode) {
@@ -944,7 +948,7 @@ bool PlrHitPlr(Player &attacker, Player &target)
 		if (attacker._pHPBase > attacker._pMaxHPBase) {
 			attacker._pHPBase = attacker._pMaxHPBase;
 		}
-		drawhpflag = true;
+		RedrawComponent(PanelDrawComponent::Health);
 	}
 	if (&attacker == MyPlayer) {
 		NetSendCmdDamage(true, target.getId(), skdam);
@@ -1627,7 +1631,7 @@ void ValidatePlayer()
 	if (myPlayer._pExperience > myPlayer._pNextExper) {
 		myPlayer._pExperience = myPlayer._pNextExper;
 		if (*sgOptions.Gameplay.experienceBar) {
-			force_redraw = 255;
+			RedrawEverything();
 		}
 	}
 
@@ -1701,9 +1705,9 @@ void CheckCheatStats(Player &player)
 
 HeroClass GetPlayerSpriteClass(HeroClass cls)
 {
-	if (cls == HeroClass::Bard && !hfbard_mpq)
+	if (cls == HeroClass::Bard && !gbBard)
 		return HeroClass::Rogue;
-	if (cls == HeroClass::Barbarian && !hfbarb_mpq)
+	if (cls == HeroClass::Barbarian && !gbBarbarian)
 		return HeroClass::Warrior;
 	return cls;
 }
@@ -1825,7 +1829,7 @@ void Player::RemoveSpdBarItem(int iv)
 	SpdList[iv].clear();
 
 	CalcScrolls();
-	force_redraw = 255;
+	RedrawEverything();
 }
 
 [[nodiscard]] size_t Player::getId() const
@@ -2006,7 +2010,7 @@ void Player::ReadySpellFromEquipment(inv_body_loc bodyLocation)
 	if (item._itype == ItemType::Staff && IsValidSpell(item._iSpell) && item._iCharges > 0) {
 		_pRSpell = item._iSpell;
 		_pRSplType = RSPLTYPE_CHARGES;
-		force_redraw = 255;
+		RedrawEverything();
 	}
 }
 
@@ -2262,45 +2266,45 @@ void LoadPlrGFX(Player &player, player_graphic graphic)
 	const char *szCel;
 	switch (graphic) {
 	case player_graphic::Stand:
-		szCel = "AS";
+		szCel = "as";
 		if (leveltype == DTYPE_TOWN)
-			szCel = "ST";
+			szCel = "st";
 		break;
 	case player_graphic::Walk:
-		szCel = "AW";
+		szCel = "aw";
 		if (leveltype == DTYPE_TOWN)
-			szCel = "WL";
+			szCel = "wl";
 		break;
 	case player_graphic::Attack:
 		if (leveltype == DTYPE_TOWN)
 			return;
-		szCel = "AT";
+		szCel = "at";
 		break;
 	case player_graphic::Hit:
 		if (leveltype == DTYPE_TOWN)
 			return;
-		szCel = "HT";
+		szCel = "ht";
 		break;
 	case player_graphic::Lightning:
-		szCel = "LM";
+		szCel = "lm";
 		break;
 	case player_graphic::Fire:
-		szCel = "FM";
+		szCel = "fm";
 		break;
 	case player_graphic::Magic:
-		szCel = "QM";
+		szCel = "qm";
 		break;
 	case player_graphic::Death:
 		if (animWeaponId != PlayerWeaponGraphic::Unarmed)
 			return;
-		szCel = "DT";
+		szCel = "dt";
 		break;
 	case player_graphic::Block:
 		if (leveltype == DTYPE_TOWN)
 			return;
 		if (!player._pBlockFlag)
 			return;
-		szCel = "BL";
+		szCel = "bl";
 		break;
 	default:
 		app_fatal("PLR:2");
@@ -2311,7 +2315,7 @@ void LoadPlrGFX(Player &player, player_graphic graphic)
 
 	char prefix[3] = { CharChar[static_cast<std::size_t>(cls)], ArmourChar[player._pgfxnum >> 4], WepChar[static_cast<std::size_t>(animWeaponId)] };
 	char pszName[256];
-	*fmt::format_to(pszName, FMT_COMPILE(R"(plrgfx\{0}\{1}\{1}{2}.cl2)"), path, string_view(prefix, 3), szCel) = 0;
+	*fmt::format_to(pszName, FMT_COMPILE(R"(plrgfx\{0}\{1}\{1}{2})"), path, string_view(prefix, 3), szCel) = 0;
 	const uint16_t animationWidth = GetPlayerSpriteWidth(cls, graphic, animWeaponId);
 	animationData.sprites = LoadCl2Sheet(pszName, animationWidth);
 	std::optional<std::array<uint8_t, 256>> trn = GetClassTRN(player);
@@ -2328,7 +2332,7 @@ void InitPlayerGFX(Player &player)
 	ResetPlayerGFX(player);
 
 	if (player._pHitPoints >> 6 == 0) {
-		player._pgfxnum &= ~0xF;
+		player._pgfxnum &= ~0xFU;
 		LoadPlrGFX(player, player_graphic::Death);
 		return;
 	}
@@ -2389,8 +2393,8 @@ void SetPlrAnims(Player &player)
 	}
 	player._pSFNum = PlrGFXAnimLens[static_cast<std::size_t>(pc)][10];
 
-	auto gn = static_cast<PlayerWeaponGraphic>(player._pgfxnum & 0xF);
-	int armorGraphicIndex = player._pgfxnum & ~0xF;
+	auto gn = static_cast<PlayerWeaponGraphic>(player._pgfxnum & 0xFU);
+	int armorGraphicIndex = player._pgfxnum & ~0xFU;
 	if (pc == HeroClass::Warrior) {
 		if (gn == PlayerWeaponGraphic::Bow) {
 			if (leveltype != DTYPE_TOWN) {
@@ -2605,7 +2609,7 @@ void CreatePlayer(Player &player, HeroClass c)
 		animWeaponId = PlayerWeaponGraphic::Staff;
 		break;
 	}
-	player._pgfxnum = static_cast<int>(animWeaponId);
+	player._pgfxnum = static_cast<uint8_t>(animWeaponId);
 
 	for (bool &levelVisited : player._pLvlVisited) {
 		levelVisited = false;
@@ -2661,7 +2665,7 @@ void NextPlrLevel(Player &player)
 	player._pHPBase = player._pMaxHPBase;
 
 	if (&player == MyPlayer) {
-		drawhpflag = true;
+		RedrawComponent(PanelDrawComponent::Health);
 	}
 
 	int mana = 128;
@@ -2679,7 +2683,7 @@ void NextPlrLevel(Player &player)
 	}
 
 	if (&player == MyPlayer) {
-		drawmanaflag = true;
+		RedrawComponent(PanelDrawComponent::Mana);
 	}
 
 	if (ControlMode != ControlTypes::KeyboardAndMouse)
@@ -2716,7 +2720,7 @@ void AddPlrExperience(Player &player, int lvl, int exp)
 	player._pExperience = std::min(player._pExperience + clampedExp, MaxExperience);
 
 	if (*sgOptions.Gameplay.experienceBar) {
-		force_redraw = 255;
+		RedrawEverything();
 	}
 
 	if (player._pExperience >= ExpLvlsTbl[49]) {
@@ -2780,7 +2784,7 @@ void InitPlayer(Player &player, bool firstTime)
 			player.AnimInfo.currentFrame = GenerateRnd(player._pNFrames - 1);
 			player.AnimInfo.tickCounterOfCurrentFrame = GenerateRnd(3);
 		} else {
-			player._pgfxnum &= ~0xF;
+			player._pgfxnum &= ~0xFU;
 			player._pmode = PM_DEATH;
 			NewPlrAnim(player, player_graphic::Death, Direction::South);
 			player.AnimInfo.currentFrame = player.AnimInfo.numberOfFrames - 2;
@@ -2920,7 +2924,7 @@ void StartPlrBlock(Player &player, Direction dir)
 
 void FixPlrWalkTags(const Player &player)
 {
-	for (Point searchTile : PointsInRectangleRange { Rectangle { player.position.old, 1 } }) {
+	for (Point searchTile : PointsInRectangle(Rectangle { player.position.old, 1 })) {
 		if (PlayerAtPosition(searchTile) == &player) {
 			dPlayer[searchTile.x][searchTile.y] = 0;
 		}
@@ -2936,7 +2940,7 @@ void StartPlrHit(Player &player, int dam, bool forcehit)
 
 	player.Say(HeroSpeech::ArghClang);
 
-	drawhpflag = true;
+	RedrawComponent(PanelDrawComponent::Health);
 	if (player._pClass == HeroClass::Barbarian) {
 		if (dam >> 6 < player._pLevel + player._pLevel / 4 && !forcehit) {
 			return;
@@ -2984,13 +2988,13 @@ StartPlayerKill(Player &player, int earflag)
 		NetSendCmdParam1(true, CMD_PLRDEAD, earflag);
 	}
 
-	bool diablolevel = gbIsMultiplayer && player.plrlevel == 16;
+	bool diablolevel = gbIsMultiplayer && (player.isOnLevel(16) || player.isOnArenaLevel());
 
 	player.Say(HeroSpeech::AuughUh);
 
 	if (player._pgfxnum != 0) {
 		if (diablolevel || earflag != 0)
-			player._pgfxnum &= ~0xF;
+			player._pgfxnum &= ~0xFU;
 		else
 			player._pgfxnum = 0;
 		ResetPlayerGFX(player);
@@ -3018,7 +3022,7 @@ StartPlayerKill(Player &player, int earflag)
 		SetPlayerOld(player);
 
 		if (&player == MyPlayer) {
-			drawhpflag = true;
+			RedrawComponent(PanelDrawComponent::Health);
 
 			if (!player.HoldItem.isEmpty()) {
 				DeadItem(player, std::move(player.HoldItem), { 0, 0 });
@@ -3098,7 +3102,7 @@ void ApplyPlrDamage(Player &player, int dam, int minHP /*= 0*/, int frac /*= 0*/
 			totalDamage += totalDamage / -player.GetManaShieldDamageReduction();
 		}
 		if (&player == MyPlayer)
-			drawmanaflag = true;
+			RedrawComponent(PanelDrawComponent::Mana);
 		if (player._pMana >= totalDamage) {
 			player._pMana -= totalDamage;
 			player._pManaBase -= totalDamage;
@@ -3118,7 +3122,7 @@ void ApplyPlrDamage(Player &player, int dam, int minHP /*= 0*/, int frac /*= 0*/
 	if (totalDamage == 0)
 		return;
 
-	drawhpflag = true;
+	RedrawComponent(PanelDrawComponent::Health);
 	player._pHitPoints -= totalDamage;
 	player._pHPBase -= totalDamage;
 	if (player._pHitPoints > player._pMaxHP) {
@@ -3306,7 +3310,7 @@ void ProcessPlayers()
 				if (HasAnyOf(player._pIFlags, ItemSpecialEffect::NoMana) && player._pManaBase > 0) {
 					player._pManaBase -= player._pMana;
 					player._pMana = 0;
-					drawmanaflag = true;
+					RedrawComponent(PanelDrawComponent::Mana);
 				}
 			}
 
@@ -3673,7 +3677,7 @@ void SetPlayerHitPoints(Player &player, int val)
 	player._pHPBase = val + player._pMaxHPBase - player._pMaxHP;
 
 	if (&player == MyPlayer) {
-		drawhpflag = true;
+		RedrawComponent(PanelDrawComponent::Health);
 	}
 }
 

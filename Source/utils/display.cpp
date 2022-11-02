@@ -24,6 +24,7 @@
 #include "controls/devices/kbcontroller.h"
 #include "controls/game_controls.h"
 #include "controls/touch/gamepad.h"
+#include "engine/backbuffer_state.hpp"
 #include "engine/dx.h"
 #include "options.h"
 #include "utils/log.hpp"
@@ -262,6 +263,9 @@ bool SpawnWindow(const char *lpWindowName)
 #if SDL_VERSION_ATLEAST(2, 0, 2)
 	SDL_SetHint(SDL_HINT_ACCELEROMETER_AS_JOYSTICK, "0");
 #endif
+#if SDL_VERSION_ATLEAST(2, 0, 12)
+	SDL_SetHint(SDL_HINT_GAMECONTROLLER_USE_BUTTON_LABELS, "0");
+#endif
 
 	int initFlags = SDL_INIT_VIDEO | SDL_INIT_JOYSTICK;
 #ifndef NOSOUND
@@ -446,7 +450,7 @@ void SetFullscreenMode()
 	}
 	InitializeVirtualGamepad();
 #endif
-	force_redraw = 255;
+	RedrawEverything();
 }
 
 void ResizeWindow()
@@ -470,7 +474,7 @@ void ResizeWindow()
 #endif
 
 	CreateBackBuffer();
-	force_redraw = 255;
+	RedrawEverything();
 }
 
 SDL_Surface *GetOutputSurface()
@@ -487,15 +491,6 @@ SDL_Surface *GetOutputSurface()
 	if (ret == nullptr)
 		ErrSdl();
 	return ret;
-#endif
-}
-
-bool IsDoubleBuffered()
-{
-#ifdef USE_SDL1
-	return (GetOutputSurface()->flags & SDL_DOUBLEBUF) == SDL_DOUBLEBUF;
-#else
-	return true;
 #endif
 }
 

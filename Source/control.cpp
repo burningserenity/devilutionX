@@ -16,6 +16,7 @@
 #include "controls/modifier_hints.h"
 #include "controls/plrctrls.h"
 #include "cursor.h"
+#include "engine/backbuffer_state.hpp"
 #include "engine/clx_sprite.hpp"
 #include "engine/load_cel.hpp"
 #include "engine/render/clx_render.hpp"
@@ -26,6 +27,7 @@
 #include "init.h"
 #include "inv.h"
 #include "inv_iterators.hpp"
+#include "levels/setmaps.h"
 #include "levels/trigs.h"
 #include "lighting.h"
 #include "minitext.h"
@@ -57,18 +59,10 @@
 
 namespace devilution {
 
-/**
- * @brief Set if the life flask needs to be redrawn during next frame
- */
-bool drawhpflag;
 bool dropGoldFlag;
 bool chrbtn[4];
 bool lvlbtndown;
 int dropGoldValue;
-/**
- * @brief Set if the mana flask needs to be redrawn during the next frame
- */
-bool drawmanaflag;
 bool chrbtnactive;
 UiFlags InfoColor;
 int sbooktab;
@@ -76,7 +70,6 @@ int8_t initialDropGoldIndex;
 bool talkflag;
 bool sbookflag;
 bool chrflag;
-bool drawbtnflag;
 StringOrView InfoString;
 bool panelflag;
 int initialDropGoldValue;
@@ -251,7 +244,7 @@ void DrawFlaskLower(const Surface &out, const Surface &sourceBuffer, int offset,
 void SetButtonStateDown(int btnId)
 {
 	PanelButtons[btnId] = true;
-	drawbtnflag = true;
+	RedrawComponent(PanelDrawComponent::ControlButtons);
 	panbtndown = true;
 }
 
@@ -318,12 +311,113 @@ int DrawDurIcon4Item(const Surface &out, Item &pItem, int x, int c)
 	return x - 32 - 8;
 }
 
+struct TextCmdItem {
+	const std::string text;
+	const std::string description;
+	const std::string requiredParameter;
+	std::string (*actionProc)(const string_view);
+};
+
+extern std::vector<TextCmdItem> TextCmdList;
+
+std::string TextCmdHelp(const string_view parameter)
+{
+	if (parameter.empty()) {
+		std::string ret;
+		StrAppend(ret, _("Available Commands:"));
+		for (const TextCmdItem &textCmd : TextCmdList) {
+			StrAppend(ret, " ", _(textCmd.text));
+		}
+		return ret;
+	}
+	auto textCmdIterator = std::find_if(TextCmdList.begin(), TextCmdList.end(), [&](const TextCmdItem &elem) { return elem.text == parameter; });
+	if (textCmdIterator == TextCmdList.end())
+		return StrCat(_("Command "), parameter, _(" is unkown."));
+	auto &textCmdItem = *textCmdIterator;
+	if (textCmdItem.requiredParameter.empty())
+		return StrCat(_("Description: "), _(textCmdItem.description), _("\nParameters: No additional parameter needed."));
+	return StrCat(_("Description: "), _(textCmdItem.description), _("\nParameters: "), _(textCmdItem.requiredParameter));
+}
+
+void AppendArenaOverview(std::string &ret)
+{
+	for (int arena = SL_FIRST_ARENA; arena <= SL_LAST; arena++) {
+		StrAppend(ret, "\n", arena - SL_FIRST_ARENA + 1, " (", QuestLevelNames[arena], ")");
+	}
+}
+
+const dungeon_type DungeonTypeForArena[] = {
+	dungeon_type::DTYPE_CATHEDRAL, // SL_ARENA_CHURCH
+	dungeon_type::DTYPE_HELL,      // SL_ARENA_HELL
+	dungeon_type::DTYPE_HELL,      // SL_ARENA_CIRCLE_OF_LIFE
+};
+
+std::string TextCmdArena(const string_view parameter)
+{
+	std::string ret;
+	if (!gbIsMultiplayer) {
+		StrAppend(ret, _("Arenas are only supported in multiplayer."));
+		return ret;
+	}
+
+	if (parameter.empty()) {
+		StrAppend(ret, _("What arena do you want to visit?"));
+		AppendArenaOverview(ret);
+		return ret;
+	}
+
+	int arenaNumber = atoi(parameter.data());
+	_setlevels arenaLevel = static_cast<_setlevels>(arenaNumber - 1 + SL_FIRST_ARENA);
+	if (arenaNumber < 0 || !IsArenaLevel(arenaLevel)) {
+		StrAppend(ret, _("Invalid arena-number. Valid numbers are:"));
+		AppendArenaOverview(ret);
+		return ret;
+	}
+
+	if (!MyPlayer->isOnLevel(0) && !MyPlayer->isOnArenaLevel()) {
+		StrAppend(ret, _("To enter a arena, you need to be in town or another arena."));
+		return ret;
+	}
+
+	setlvltype = DungeonTypeForArena[arenaLevel - SL_FIRST_ARENA];
+	StartNewLvl(*MyPlayer, WM_DIABSETLVL, arenaLevel);
+	return ret;
+}
+
+std::vector<TextCmdItem> TextCmdList = {
+	{ N_("/help"), N_("Prints help overview or help for a specific command."), N_("({command})"), &TextCmdHelp },
+	{ N_("/arena"), N_("Enter a PvP Arena."), N_("{arena-number}"), &TextCmdArena }
+};
+
+bool CheckTextCommand(const string_view text)
+{
+	if (text.size() < 1 || text[0] != '/')
+		return false;
+
+	auto textCmdIterator = std::find_if(TextCmdList.begin(), TextCmdList.end(), [&](const TextCmdItem &elem) { return text.find(elem.text) == 0 && (text.length() == elem.text.length() || text[elem.text.length()] == ' '); });
+	if (textCmdIterator == TextCmdList.end()) {
+		InitDiabloMsg(StrCat(_("Command \""), text, "\" is unknown."));
+		return true;
+	}
+
+	TextCmdItem &textCmd = *textCmdIterator;
+	string_view parameter = "";
+	if (text.length() > (textCmd.text.length() + 1))
+		parameter = text.substr(textCmd.text.length() + 1);
+	const std::string result = textCmd.actionProc(parameter);
+	if (result != "")
+		InitDiabloMsg(result);
+	return true;
+}
+
 void ResetTalkMsg()
 {
 #ifdef _DEBUG
 	if (CheckDebugTextCommand(TalkMessage))
 		return;
 #endif
+	if (CheckTextCommand(TalkMessage))
+		return;
 
 	uint32_t pmask = 0;
 
@@ -468,6 +562,14 @@ void AddPanelString(string_view str)
 		InfoString = StrCat(InfoString, "\n", str);
 }
 
+void AddPanelString(std::string &&str)
+{
+	if (InfoString.empty())
+		InfoString = std::move(str);
+	else
+		InfoString = StrCat(InfoString, "\n", str);
+}
+
 Point GetPanelPosition(UiPanels panel, Point offset)
 {
 	Displacement displacement { offset.x, offset.y };
@@ -547,12 +649,12 @@ void InitControlPan()
 		LoadCharPanel();
 		LoadSpellIcons();
 		{
-			const OwnedClxSpriteList sprite = LoadCel("ctrlpan\\panel8.cel", GetMainPanel().size.width);
+			const OwnedClxSpriteList sprite = LoadCel("ctrlpan\\panel8", GetMainPanel().size.width);
 			ClxDraw(*pBtmBuff, { 0, (GetMainPanel().size.height + 16) - 1 }, sprite[0]);
 		}
 		{
 			const Point bulbsPosition { 0, 87 };
-			const OwnedClxSpriteList statusPanel = LoadCel("ctrlpan\\p8bulbs.cel", 88);
+			const OwnedClxSpriteList statusPanel = LoadCel("ctrlpan\\p8bulbs", 88);
 			ClxDraw(*pLifeBuff, bulbsPosition, statusPanel[0]);
 			ClxDraw(*pManaBuff, bulbsPosition, statusPanel[1]);
 		}
@@ -561,11 +663,11 @@ void InitControlPan()
 	if (IsChatAvailable()) {
 		if (!HeadlessMode) {
 			{
-				const OwnedClxSpriteList sprite = LoadCel("ctrlpan\\talkpanl.cel", GetMainPanel().size.width);
+				const OwnedClxSpriteList sprite = LoadCel("ctrlpan\\talkpanl", GetMainPanel().size.width);
 				ClxDraw(*pBtmBuff, { 0, (GetMainPanel().size.height + 16) * 2 - 1 }, sprite[0]);
 			}
-			multiButtons = LoadCel("ctrlpan\\p8but2.cel", 33);
-			talkButtons = LoadCel("ctrlpan\\talkbutt.cel", 61);
+			multiButtons = LoadCel("ctrlpan\\p8but2", 33);
+			talkButtons = LoadCel("ctrlpan\\talkbutt", 61);
 		}
 		sgbPlrTalkTbl = 0;
 		TalkMessage[0] = '\0';
@@ -578,10 +680,10 @@ void InitControlPan()
 	lvlbtndown = false;
 	if (!HeadlessMode) {
 		LoadMainPanel();
-		pPanelButtons = LoadCel("ctrlpan\\panel8bu.cel", 71);
+		pPanelButtons = LoadCel("ctrlpan\\panel8bu", 71);
 
 		static const uint16_t CharButtonsFrameWidths[9] { 95, 41, 41, 41, 41, 41, 41, 41, 41 };
-		pChrButtons = LoadCel("data\\charbut.cel", CharButtonsFrameWidths);
+		pChrButtons = LoadCel("data\\charbut", CharButtonsFrameWidths);
 	}
 	ClearPanBtn();
 	if (!IsChatAvailable())
@@ -589,13 +691,13 @@ void InitControlPan()
 	else
 		PanelButtonIndex = 8;
 	if (!HeadlessMode)
-		pDurIcons = LoadCel("items\\duricons.cel", 32);
+		pDurIcons = LoadCel("items\\duricons", 32);
 	for (bool &buttonEnabled : chrbtn)
 		buttonEnabled = false;
 	chrbtnactive = false;
 	InfoString = {};
-	drawhpflag = true;
-	drawmanaflag = true;
+	RedrawComponent(PanelDrawComponent::Health);
+	RedrawComponent(PanelDrawComponent::Mana);
 	chrflag = false;
 	spselflag = false;
 	sbooktab = 0;
@@ -603,8 +705,8 @@ void InitControlPan()
 
 	if (!HeadlessMode) {
 		InitSpellBook();
-		pQLogCel = LoadCel("data\\quest.cel", static_cast<uint16_t>(SidePanelSize.width));
-		pGBoxBuff = LoadCel("ctrlpan\\golddrop.cel", 261);
+		pQLogCel = LoadCel("data\\quest", static_cast<uint16_t>(SidePanelSize.width));
+		pGBoxBuff = LoadCel("ctrlpan\\golddrop", 261);
 	}
 	CloseGoldDrop();
 	dropGoldValue = 0;
@@ -649,7 +751,7 @@ void ClearPanBtn()
 {
 	for (bool &panelButton : PanelButtons)
 		panelButton = false;
-	drawbtnflag = true;
+	RedrawComponent(PanelDrawComponent::ControlButtons);
 	panbtndown = false;
 }
 
@@ -663,7 +765,7 @@ void DoPanBtn()
 		if (MousePosition.x >= PanBtnPos[i].x + mainPanelPosition.x && MousePosition.x <= x) {
 			if (MousePosition.y >= PanBtnPos[i].y + mainPanelPosition.y && MousePosition.y <= y) {
 				PanelButtons[i] = true;
-				drawbtnflag = true;
+				RedrawComponent(PanelDrawComponent::ControlButtons);
 				panbtndown = true;
 			}
 		}
@@ -673,7 +775,7 @@ void DoPanBtn()
 			Player &myPlayer = *MyPlayer;
 			myPlayer._pRSpell = SPL_INVALID;
 			myPlayer._pRSplType = RSPLTYPE_INVALID;
-			force_redraw = 255;
+			RedrawEverything();
 			return;
 		}
 		DoSpeedBook();
@@ -780,7 +882,7 @@ void CheckBtnUp()
 	bool gamemenuOff = true;
 	const Point mainPanelPosition = GetMainPanel().position;
 
-	drawbtnflag = true;
+	RedrawComponent(PanelDrawComponent::ControlButtons);
 	panbtndown = false;
 
 	for (int i = 0; i < 8; i++) {
@@ -1114,8 +1216,6 @@ void DrawTalkPan(const Surface &out)
 	if (!talkflag)
 		return;
 
-	force_redraw = 255;
-
 	const Point mainPanelPosition = GetMainPanel().position;
 
 	DrawPanelBox(out, MakeSdlRect(175, sgbPlrTalkTbl + 20, 294, 5), mainPanelPosition + Displacement { 175, 4 });
@@ -1220,7 +1320,7 @@ void control_type_message()
 	if (!IsChatAvailable())
 		return;
 
-	talkflag = true;
+	RedrawComponent(PanelDrawComponent::ChatInput);
 	SDL_Rect rect = MakeSdlRect(GetMainPanel().position.x + 200, GetMainPanel().position.y + 22, 250, 39);
 	SDL_SetTextInputRect(&rect);
 	TalkMessage[0] = '\0';
@@ -1228,7 +1328,7 @@ void control_type_message()
 		talkButtonDown = false;
 	}
 	sgbPlrTalkTbl = GetMainPanel().size.height + 16;
-	force_redraw = 255;
+	RedrawEverything();
 	TalkSaveIndex = NextTalkSave;
 	SDL_StartTextInput();
 }
@@ -1238,7 +1338,7 @@ void control_reset_talk()
 	talkflag = false;
 	SDL_StopTextInput();
 	sgbPlrTalkTbl = 0;
-	force_redraw = 255;
+	RedrawEverything();
 }
 
 bool IsTalkActive()
@@ -1295,6 +1395,8 @@ void DiabloHotkeyMsg(uint32_t dwMsg)
 		if (CheckDebugTextCommand(msg))
 			continue;
 #endif
+		if (CheckTextCommand(msg))
+			continue;
 		char charMsg[MAX_SEND_STR_LEN];
 		CopyUtf8(charMsg, msg, sizeof(charMsg));
 		NetSendCmdString(0xFFFFFF, charMsg);

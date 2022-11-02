@@ -11,6 +11,7 @@
 #include "DiabloUI/ui_flags.hpp"
 #include "controls/plrctrls.h"
 #include "cursor.h"
+#include "engine/backbuffer_state.hpp"
 #include "engine/clx_sprite.hpp"
 #include "engine/load_cel.hpp"
 #include "engine/render/clx_render.hpp"
@@ -37,7 +38,6 @@
 namespace devilution {
 
 bool invflag;
-bool drawsbarflag;
 
 /**
  * Maps from inventory slot to screen position. The inventory slots are
@@ -566,7 +566,7 @@ void CheckInvPaste(Player &player, Point cursorPosition)
 		if (&player == MyPlayer) {
 			NetSendCmdChBeltItem(false, ii);
 		}
-		drawsbarflag = true;
+		RedrawComponent(PanelDrawComponent::Belt);
 	} break;
 	case ILOC_NONE:
 	case ILOC_INVALID:
@@ -937,24 +937,6 @@ void CheckQuestItem(Player &player, Item &questItem)
 	TryCombineNaKrulNotes(player, questItem);
 }
 
-void OpenHive()
-{
-	NetSendCmd(false, CMD_OPENHIVE);
-	auto &quest = Quests[Q_FARMER];
-	quest._qactive = QUEST_DONE;
-	if (gbIsMultiplayer)
-		NetSendCmdQuest(true, quest);
-}
-
-void OpenCrypt()
-{
-	NetSendCmd(false, CMD_OPENCRYPT);
-	auto &quest = Quests[Q_GRAVE];
-	quest._qactive = QUEST_DONE;
-	if (gbIsMultiplayer)
-		NetSendCmdQuest(true, quest);
-}
-
 void CleanupItems(int ii)
 {
 	auto &item = Items[ii];
@@ -1035,7 +1017,7 @@ int CreateGoldItemInInventorySlot(Player &player, int slotIndex, int value)
 
 } // namespace
 
-void InvDrawSlotBack(const Surface &out, Point targetPosition, Size size)
+void InvDrawSlotBack(const Surface &out, Point targetPosition, Size size, item_quality itemQuality)
 {
 	SDL_Rect srcRect = MakeSdlRect(0, 0, size.width, size.height);
 	out.Clip(&srcRect, &targetPosition);
@@ -1048,11 +1030,18 @@ void InvDrawSlotBack(const Surface &out, Point targetPosition, Size size)
 	for (int hgt = size.height; hgt != 0; hgt--, dst -= dstPitch + size.width) {
 		for (int wdt = size.width; wdt != 0; wdt--) {
 			std::uint8_t pix = *dst;
-			if (pix >= PAL16_BLUE) {
-				if (pix <= PAL16_BLUE + 15)
-					pix -= PAL16_BLUE - PAL16_BEIGE;
-				else if (pix >= PAL16_GRAY)
-					pix -= PAL16_GRAY - PAL16_BEIGE;
+			if (pix >= PAL16_GRAY) {
+				switch (itemQuality) {
+				case ITEM_QUALITY_MAGIC:
+					pix -= PAL16_GRAY - PAL16_BLUE - 1;
+					break;
+				case ITEM_QUALITY_UNIQUE:
+					pix -= PAL16_GRAY - PAL16_YELLOW - 1;
+					break;
+				default:
+					pix -= PAL16_GRAY - PAL16_BEIGE - 1;
+					break;
+				}
 			}
 			*dst++ = pix;
 		}
@@ -1077,17 +1066,17 @@ void InitInv()
 	switch (MyPlayer->_pClass) {
 	case HeroClass::Warrior:
 	case HeroClass::Barbarian:
-		pInvCels = LoadCel("data\\inv\\inv.cel", static_cast<uint16_t>(SidePanelSize.width));
+		pInvCels = LoadCel("data\\inv\\inv", static_cast<uint16_t>(SidePanelSize.width));
 		break;
 	case HeroClass::Rogue:
 	case HeroClass::Bard:
-		pInvCels = LoadCel("data\\inv\\inv_rog.cel", static_cast<uint16_t>(SidePanelSize.width));
+		pInvCels = LoadCel("data\\inv\\inv_rog", static_cast<uint16_t>(SidePanelSize.width));
 		break;
 	case HeroClass::Sorcerer:
-		pInvCels = LoadCel("data\\inv\\inv_sor.cel", static_cast<uint16_t>(SidePanelSize.width));
+		pInvCels = LoadCel("data\\inv\\inv_sor", static_cast<uint16_t>(SidePanelSize.width));
 		break;
 	case HeroClass::Monk:
-		pInvCels = LoadCel(!gbIsSpawn ? "data\\inv\\inv_sor.cel" : "data\\inv\\inv.cel", static_cast<uint16_t>(SidePanelSize.width));
+		pInvCels = LoadCel(!gbIsSpawn ? "data\\inv\\inv_sor" : "data\\inv\\inv", static_cast<uint16_t>(SidePanelSize.width));
 		break;
 	}
 }
@@ -1122,7 +1111,7 @@ void DrawInv(const Surface &out)
 		if (!myPlayer.InvBody[slot].isEmpty()) {
 			int screenX = slotPos[slot].x;
 			int screenY = slotPos[slot].y;
-			InvDrawSlotBack(out, GetPanelPosition(UiPanels::Inventory, { screenX, screenY }), { slotSize[slot].width * InventorySlotSizeInPixels.width, slotSize[slot].height * InventorySlotSizeInPixels.height });
+			InvDrawSlotBack(out, GetPanelPosition(UiPanels::Inventory, { screenX, screenY }), { slotSize[slot].width * InventorySlotSizeInPixels.width, slotSize[slot].height * InventorySlotSizeInPixels.height }, myPlayer.InvBody[slot]._iMagical);
 
 			const int cursId = myPlayer.InvBody[slot]._iCurs + CURSOR_FIRSTITEM;
 
@@ -1148,7 +1137,7 @@ void DrawInv(const Surface &out)
 
 			if (slot == INVLOC_HAND_LEFT) {
 				if (myPlayer.GetItemLocation(myPlayer.InvBody[slot]) == ILOC_TWOHAND) {
-					InvDrawSlotBack(out, GetPanelPosition(UiPanels::Inventory, slotPos[INVLOC_HAND_RIGHT]), { slotSize[INVLOC_HAND_RIGHT].width * InventorySlotSizeInPixels.width, slotSize[INVLOC_HAND_RIGHT].height * InventorySlotSizeInPixels.height });
+					InvDrawSlotBack(out, GetPanelPosition(UiPanels::Inventory, slotPos[INVLOC_HAND_RIGHT]), { slotSize[INVLOC_HAND_RIGHT].width * InventorySlotSizeInPixels.width, slotSize[INVLOC_HAND_RIGHT].height * InventorySlotSizeInPixels.height }, myPlayer.InvBody[slot]._iMagical);
 					LightTableIndex = 0;
 					cel_transparency_active = true;
 
@@ -1167,7 +1156,8 @@ void DrawInv(const Surface &out)
 			InvDrawSlotBack(
 			    out,
 			    GetPanelPosition(UiPanels::Inventory, InvRect[i + SLOTXY_INV_FIRST]) + Displacement { 0, -1 },
-			    InventorySlotSizeInPixels);
+			    InventorySlotSizeInPixels,
+			    myPlayer.InvList[abs(myPlayer.InvGrid[i]) - 1]._iMagical);
 		}
 	}
 
@@ -1205,7 +1195,7 @@ void DrawInvBelt(const Surface &out)
 		}
 
 		const Point position { InvRect[i + SLOTXY_BELT_FIRST].x + mainPanelPosition.x, InvRect[i + SLOTXY_BELT_FIRST].y + mainPanelPosition.y - 1 };
-		InvDrawSlotBack(out, position, InventorySlotSizeInPixels);
+		InvDrawSlotBack(out, position, InventorySlotSizeInPixels, myPlayer.SpdList[i]._iMagical);
 		const int cursId = myPlayer.SpdList[i]._iCurs + CURSOR_FIRSTITEM;
 
 		const ClxSprite sprite = GetInvItemSprite(cursId);
@@ -1245,7 +1235,7 @@ bool AutoPlaceItemInBelt(Player &player, const Item &item, bool persistItem)
 			if (persistItem) {
 				beltItem = item;
 				player.CalcScrolls();
-				drawsbarflag = true;
+				RedrawComponent(PanelDrawComponent::Belt);
 				if (&player == MyPlayer) {
 					size_t beltIndex = std::distance<const Item *>(&player.SpdList[0], &beltItem);
 					NetSendCmdChBeltItem(false, beltIndex);
@@ -1776,17 +1766,6 @@ bool CanPut(Point position)
 
 int InvPutItem(const Player &player, Point position, const Item &item)
 {
-	if (player.isOnLevel(0)) {
-		if (item.IDidx == IDI_RUNEBOMB && OpensHive(position)) {
-			OpenHive();
-			return -1;
-		}
-		if (item.IDidx == IDI_MAPOFDOOM && OpensGrave(position)) {
-			OpenCrypt();
-			return -1;
-		}
-	}
-
 	std::optional<Point> itemTile = FindAdjacentPositionForItem(player.position.tile, GetDirection(player.position.tile, position));
 	if (!itemTile)
 		return -1;
@@ -1808,24 +1787,11 @@ int InvPutItem(const Player &player, Point position, const Item &item)
 	return ii;
 }
 
-int SyncPutItem(const Player &player, Point position, int idx, uint16_t icreateinfo, int iseed, int id, int dur, int mdur, int ch, int mch, int ivalue, uint32_t ibuff, int toHit, int maxDam, int minStr, int minMag, int minDex, int ac)
+int SyncDropItem(Point position, _item_indexes idx, uint16_t icreateinfo, int iseed, int id, int dur, int mdur, int ch, int mch, int ivalue, uint32_t ibuff, int toHit, int maxDam, int minStr, int minMag, int minDex, int ac)
 {
-	if (player.isOnLevel(0)) {
-		if (idx == IDI_RUNEBOMB && OpensHive(position))
-			return -1;
-		if (idx == IDI_MAPOFDOOM && OpensGrave(position))
-			return -1;
-	}
-
-	std::optional<Point> itemTile = FindAdjacentPositionForItem(player.position.tile, GetDirection(player.position.tile, position));
-	if (!itemTile)
+	if (ActiveItemCount >= MAXITEMS)
 		return -1;
 
-	return SyncDropItem(*itemTile, idx, icreateinfo, iseed, id, dur, mdur, ch, mch, ivalue, ibuff, toHit, maxDam, minStr, minMag, minDex, ac);
-}
-
-int SyncDropItem(Point position, int idx, uint16_t icreateinfo, int iseed, int id, int dur, int mdur, int ch, int mch, int ivalue, uint32_t ibuff, int toHit, int maxDam, int minStr, int minMag, int minDex, int ac)
-{
 	int ii = AllocateItem();
 	auto &item = Items[ii];
 
@@ -1857,17 +1823,11 @@ int SyncDropItem(Point position, int idx, uint16_t icreateinfo, int iseed, int i
 	return ii;
 }
 
-int SyncPutEar(const Player &player, Point position, uint16_t icreateinfo, int iseed, uint8_t cursval, string_view heroname)
-{
-	std::optional<Point> itemTile = FindAdjacentPositionForItem(player.position.tile, GetDirection(player.position.tile, position));
-	if (!itemTile)
-		return -1;
-
-	return SyncDropEar(*itemTile, icreateinfo, iseed, cursval, heroname);
-}
-
 int SyncDropEar(Point position, uint16_t icreateinfo, int iseed, uint8_t cursval, string_view heroname)
 {
+	if (ActiveItemCount >= MAXITEMS)
+		return -1;
+
 	int ii = AllocateItem();
 	auto &item = Items[ii];
 
@@ -1947,7 +1907,7 @@ int8_t CheckInvHLight()
 		pi = &myPlayer.InvList[ii];
 	} else if (r >= SLOTXY_BELT_FIRST) {
 		r -= SLOTXY_BELT_FIRST;
-		drawsbarflag = true;
+		RedrawComponent(PanelDrawComponent::Belt);
 		pi = &myPlayer.SpdList[r];
 		if (pi->isEmpty())
 			return -1;
@@ -2013,7 +1973,7 @@ bool CanUseScroll(Player &player, spell_id spell)
 		return false;
 
 	return HasInventoryOrBeltItem(player, [spell](const Item &item) {
-		return item.isScrollOf(spell);
+		return item.isScrollOf(spell) || item.isRuneOf(spell);
 	});
 }
 
@@ -2113,8 +2073,8 @@ bool UseInvItem(size_t pnum, int cii)
 			player.RemoveInvItem(c);
 			return true;
 		}
-		if (UseItemOpensCrypt(*item, player.position.tile)) {
-			OpenCrypt();
+		if (UseItemOpensGrave(*item, player.position.tile)) {
+			OpenGrave();
 			player.RemoveInvItem(c);
 			return true;
 		}

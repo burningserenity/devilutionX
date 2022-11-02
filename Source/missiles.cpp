@@ -14,6 +14,7 @@
 #ifdef _DEBUG
 #include "debug.h"
 #endif
+#include "engine/backbuffer_state.hpp"
 #include "engine/load_file.hpp"
 #include "engine/points_in_rectangle_range.hpp"
 #include "engine/random.hpp"
@@ -272,6 +273,9 @@ bool Plr2PlrMHit(const Player &player, int p, int mindam, int maxdam, int dist, 
 		return false;
 
 	*blocked = false;
+
+	if (target.isOnArenaLevel() && target._pmode == PM_WALK_SIDEWAYS)
+		return false;
 
 	if (target._pInvincible) {
 		return false;
@@ -1108,7 +1112,7 @@ void InitMissiles()
 	}
 }
 
-void AddHiveExplosion(Missile &missile, const AddMissileParameter &parameter)
+void AddHiveExplosion(Missile &missile, AddMissileParameter &parameter)
 {
 	for (int x : { 80, 81 }) {
 		for (int y : { 62, 63 }) {
@@ -1118,40 +1122,35 @@ void AddHiveExplosion(Missile &missile, const AddMissileParameter &parameter)
 	missile._miDelFlag = true;
 }
 
-void AddFireRune(Missile &missile, const AddMissileParameter &parameter)
+void AddFireRune(Missile &missile, AddMissileParameter &parameter)
 {
 	AddRune(missile, parameter.dst, MIS_HIVEEXP);
-	ConsumeSpell(Players[missile._misource], SPL_RUNEFIRE);
 }
 
-void AddLightningRune(Missile &missile, const AddMissileParameter &parameter)
+void AddLightningRune(Missile &missile, AddMissileParameter &parameter)
 {
 	int lvl = (missile.sourceType() == MissileSource::Player) ? missile.sourcePlayer()->_pLevel : 0;
 	int dmg = 16 * (GenerateRndSum(10, 2) + lvl + 2);
 	missile._midam = dmg;
 	AddRune(missile, parameter.dst, MIS_LIGHTWALL);
-	ConsumeSpell(Players[missile._misource], SPL_RUNELIGHT);
 }
 
-void AddGreatLightningRune(Missile &missile, const AddMissileParameter &parameter)
+void AddGreatLightningRune(Missile &missile, AddMissileParameter &parameter)
 {
 	AddRune(missile, parameter.dst, MIS_NOVA);
-	ConsumeSpell(Players[missile._misource], SPL_RUNENOVA);
 }
 
-void AddImmolationRune(Missile &missile, const AddMissileParameter &parameter)
+void AddImmolationRune(Missile &missile, AddMissileParameter &parameter)
 {
 	AddRune(missile, parameter.dst, MIS_IMMOLATION);
-	ConsumeSpell(Players[missile._misource], SPL_RUNEIMMOLAT);
 }
 
-void AddStoneRune(Missile &missile, const AddMissileParameter &parameter)
+void AddStoneRune(Missile &missile, AddMissileParameter &parameter)
 {
 	AddRune(missile, parameter.dst, MIS_STONE);
-	ConsumeSpell(Players[missile._misource], SPL_RUNESTONE);
 }
 
-void AddReflection(Missile &missile, const AddMissileParameter & /*parameter*/)
+void AddReflection(Missile &missile, AddMissileParameter & /*parameter*/)
 {
 	missile._miDelFlag = true;
 
@@ -1166,13 +1165,12 @@ void AddReflection(Missile &missile, const AddMissileParameter & /*parameter*/)
 	player.wReflections += add;
 	if (&player == MyPlayer)
 		NetSendCmdParam1(true, CMD_SETREFLECT, player.wReflections);
-
-	ConsumeSpell(player, SPL_REFLECT);
 }
 
-void AddBerserk(Missile &missile, const AddMissileParameter &parameter)
+void AddBerserk(Missile &missile, AddMissileParameter &parameter)
 {
 	missile._miDelFlag = true;
+	parameter.spellFizzled = true;
 
 	if (missile.sourceType() == MissileSource::Trap)
 		return;
@@ -1216,11 +1214,11 @@ void AddBerserk(Missile &missile, const AddMissileParameter &parameter)
 		monster.maxDamageSpecial = (GenerateRnd(10) + 120) * monster.maxDamageSpecial / 100 + slvl;
 		int lightRadius = leveltype == DTYPE_NEST ? 9 : 3;
 		monster.lightId = AddLight(monster.position.tile, lightRadius);
-		ConsumeSpell(player, SPL_BERSERK);
+		parameter.spellFizzled = false;
 	}
 }
 
-void AddHorkSpawn(Missile &missile, const AddMissileParameter &parameter)
+void AddHorkSpawn(Missile &missile, AddMissileParameter &parameter)
 {
 	UpdateMissileVelocity(missile, parameter.dst, 8);
 	missile._mirange = 9;
@@ -1228,7 +1226,7 @@ void AddHorkSpawn(Missile &missile, const AddMissileParameter &parameter)
 	PutMissile(missile);
 }
 
-void AddJester(Missile &missile, const AddMissileParameter &parameter)
+void AddJester(Missile &missile, AddMissileParameter &parameter)
 {
 	missile_id spell = MIS_FIREBOLT;
 	switch (GenerateRnd(10)) {
@@ -1250,7 +1248,6 @@ void AddJester(Missile &missile, const AddMissileParameter &parameter)
 		break;
 	case 6:
 		spell = MIS_TOWN;
-		ConsumeSpell(Players[missile._misource], SPL_TOWN);
 		break;
 	case 7:
 		spell = MIS_TELEPORT;
@@ -1262,11 +1259,12 @@ void AddJester(Missile &missile, const AddMissileParameter &parameter)
 		spell = MIS_STONE;
 		break;
 	}
-	AddMissile(missile.position.start, parameter.dst, parameter.midir, spell, missile._micaster, missile._misource, 0, missile._mispllvl);
+	Missile *randomMissile = AddMissile(missile.position.start, parameter.dst, parameter.midir, spell, missile._micaster, missile._misource, 0, missile._mispllvl);
+	parameter.spellFizzled = randomMissile == nullptr;
 	missile._miDelFlag = true;
 }
 
-void AddStealPotions(Missile &missile, const AddMissileParameter & /*parameter*/)
+void AddStealPotions(Missile &missile, AddMissileParameter & /*parameter*/)
 {
 	Crawl(0, 2, [&](Displacement displacement) {
 		Point target = missile.position.start + displacement;
@@ -1279,11 +1277,12 @@ void AddStealPotions(Missile &missile, const AddMissileParameter & /*parameter*/
 
 		bool hasPlayedSFX = false;
 		for (int si = 0; si < MaxBeltItems; si++) {
-			int ii = -1;
-			if (player.SpdList[si]._itype == ItemType::Misc) {
+			Item &beltItem = player.SpdList[si];
+			_item_indexes ii = IDI_NONE;
+			if (beltItem._itype == ItemType::Misc) {
 				if (FlipCoin())
 					continue;
-				switch (player.SpdList[si]._iMiscId) {
+				switch (beltItem._iMiscId) {
 				case IMISC_FULLHEAL:
 					ii = ItemMiscIdIdx(IMISC_HEAL);
 					break;
@@ -1314,23 +1313,25 @@ void AddStealPotions(Missile &missile, const AddMissileParameter & /*parameter*/
 					continue;
 				}
 			}
-			if (ii != -1) {
-				InitializeItem(player.SpdList[si], ii);
-				player.SpdList[si]._iStatFlag = true;
+			if (ii != IDI_NONE) {
+				auto seed = beltItem._iSeed;
+				InitializeItem(beltItem, ii);
+				beltItem._iSeed = seed;
+				beltItem._iStatFlag = true;
 			}
 			if (!hasPlayedSFX) {
 				PlaySfxLoc(IS_POPPOP2, target);
 				hasPlayedSFX = true;
 			}
 		}
-		force_redraw = 255;
+		RedrawEverything();
 
 		return false;
 	});
 	missile._miDelFlag = true;
 }
 
-void AddManaTrap(Missile &missile, const AddMissileParameter & /*parameter*/)
+void AddManaTrap(Missile &missile, AddMissileParameter & /*parameter*/)
 {
 	std::optional<Point> trappedPlayerPosition = FindClosestValidPosition(
 	    [](Point target) {
@@ -1344,14 +1345,14 @@ void AddManaTrap(Missile &missile, const AddMissileParameter & /*parameter*/)
 		player._pMana = 0;
 		player._pManaBase = player._pMana + player._pMaxManaBase - player._pMaxMana;
 		CalcPlrInv(player, false);
-		drawmanaflag = true;
+		RedrawComponent(PanelDrawComponent::Mana);
 		PlaySfxLoc(TSFX_COW7, *trappedPlayerPosition);
 	}
 
 	missile._miDelFlag = true;
 }
 
-void AddSpecArrow(Missile &missile, const AddMissileParameter &parameter)
+void AddSpecArrow(Missile &missile, AddMissileParameter &parameter)
 {
 	int av = 0;
 
@@ -1379,7 +1380,7 @@ void AddSpecArrow(Missile &missile, const AddMissileParameter &parameter)
 	missile.var3 = av;
 }
 
-void AddWarp(Missile &missile, const AddMissileParameter & /*parameter*/)
+void AddWarp(Missile &missile, AddMissileParameter & /*parameter*/)
 {
 	int minDistanceSq = std::numeric_limits<int>::max();
 	Point src = missile.position.start;
@@ -1421,8 +1422,12 @@ void AddWarp(Missile &missile, const AddMissileParameter & /*parameter*/)
 				if (IsAnyOf(trg->_tmsg, WM_DIABTWARPUP, WM_DIABPREVLVL, WM_DIABRTNLVL))
 					return Displacement { 1, 1 };
 				return Displacement { 0, 1 }; // WM_DIABNEXTLVL
+			case DTYPE_TOWN:
+				app_fatal("invalid leveltype: DTYPE_TOWN");
+			case DTYPE_NONE:
+				app_fatal("leveltype not set");
 			}
-			app_fatal("Unhandled leveltype");
+			app_fatal(StrCat("invalid leveltype", static_cast<int>(leveltype)));
 		};
 		Displacement triggerOffset = getTriggerOffset(trg);
 		candidate += triggerOffset;
@@ -1435,12 +1440,9 @@ void AddWarp(Missile &missile, const AddMissileParameter & /*parameter*/)
 	}
 	missile._mirange = 2;
 	missile.position.tile = tile;
-	if (missileSource == MissileSource::Player) {
-		ConsumeSpell(*missile.sourcePlayer(), SPL_WARP);
-	}
 }
 
-void AddLightningWall(Missile &missile, const AddMissileParameter &parameter)
+void AddLightningWall(Missile &missile, AddMissileParameter &parameter)
 {
 	UpdateMissileVelocity(missile, parameter.dst, 16);
 	missile._miAnimFrame = GenerateRnd(8) + 1;
@@ -1461,7 +1463,7 @@ void AddLightningWall(Missile &missile, const AddMissileParameter &parameter)
 	}
 }
 
-void AddRuneExplosion(Missile &missile, const AddMissileParameter & /*parameter*/)
+void AddRuneExplosion(Missile &missile, AddMissileParameter & /*parameter*/)
 {
 	if (missile.sourceType() == MissileSource::Player) {
 		int dmg = 2 * (missile.sourcePlayer()->_pLevel + GenerateRndSum(10, 2)) + 4;
@@ -1469,10 +1471,7 @@ void AddRuneExplosion(Missile &missile, const AddMissileParameter & /*parameter*
 
 		missile._midam = dmg;
 
-		auto searchArea = PointsInRectangleRangeColMajor {
-			Rectangle { missile.position.tile, 1 }
-		};
-		for (Point position : searchArea)
+		for (Point position : PointsInRectangleColMajor(Rectangle { missile.position.tile, 1 }))
 			CheckMissileCol(missile, dmg, dmg, false, position, true);
 	}
 	missile._mlid = AddLight(missile.position.start, 8);
@@ -1480,7 +1479,7 @@ void AddRuneExplosion(Missile &missile, const AddMissileParameter & /*parameter*
 	missile._mirange = missile._miAnimLen - 1;
 }
 
-void AddFireNova(Missile &missile, const AddMissileParameter &parameter)
+void AddFireNova(Missile &missile, AddMissileParameter &parameter)
 {
 	Point dst = parameter.dst;
 	if (missile.position.start == parameter.dst) {
@@ -1496,7 +1495,7 @@ void AddFireNova(Missile &missile, const AddMissileParameter &parameter)
 	missile._mlid = AddLight(missile.position.start, 8);
 }
 
-void AddLightningArrow(Missile &missile, const AddMissileParameter &parameter)
+void AddLightningArrow(Missile &missile, AddMissileParameter &parameter)
 {
 	Point dst = parameter.dst;
 	if (missile.position.start == parameter.dst) {
@@ -1515,7 +1514,7 @@ void AddLightningArrow(Missile &missile, const AddMissileParameter &parameter)
 	missile._midam <<= 6;
 }
 
-void AddMana(Missile &missile, const AddMissileParameter & /*parameter*/)
+void AddMana(Missile &missile, AddMissileParameter & /*parameter*/)
 {
 	Player &player = Players[missile._misource];
 
@@ -1536,32 +1535,28 @@ void AddMana(Missile &missile, const AddMissileParameter & /*parameter*/)
 	player._pManaBase += manaAmount;
 	if (player._pManaBase > player._pMaxManaBase)
 		player._pManaBase = player._pMaxManaBase;
-	ConsumeSpell(player, SPL_MANA);
 	missile._miDelFlag = true;
-	drawmanaflag = true;
+	RedrawComponent(PanelDrawComponent::Mana);
 }
 
-void AddMagi(Missile &missile, const AddMissileParameter & /*parameter*/)
+void AddMagi(Missile &missile, AddMissileParameter & /*parameter*/)
 {
 	Player &player = Players[missile._misource];
 
 	player._pMana = player._pMaxMana;
 	player._pManaBase = player._pMaxManaBase;
-	ConsumeSpell(player, SPL_MAGI);
 	missile._miDelFlag = true;
-	drawmanaflag = true;
+	RedrawComponent(PanelDrawComponent::Mana);
 }
 
-void AddRing(Missile &missile, const AddMissileParameter & /*parameter*/)
+void AddRing(Missile &missile, AddMissileParameter & /*parameter*/)
 {
-	if (missile._micaster == TARGET_MONSTERS)
-		ConsumeSpell(Players[missile._misource], SPL_FIRERING);
 	missile.var1 = missile.position.start.x;
 	missile.var2 = missile.position.start.y;
 	missile._mirange = 7;
 }
 
-void AddSearch(Missile &missile, const AddMissileParameter & /*parameter*/)
+void AddSearch(Missile &missile, AddMissileParameter & /*parameter*/)
 {
 	Player &player = Players[missile._misource];
 
@@ -1571,8 +1566,6 @@ void AddSearch(Missile &missile, const AddMissileParameter & /*parameter*/)
 	if (missile._misource >= 0)
 		lvl = player._pLevel * 2;
 	missile._mirange = lvl + 10 * missile._mispllvl + 245;
-	if (missile._micaster == TARGET_MONSTERS)
-		ConsumeSpell(player, SPL_SEARCH);
 
 	for (auto &other : Missiles) {
 		if (&other != &missile && missile.isSameSource(other) && other._mitype == MIS_SEARCH) {
@@ -1586,7 +1579,7 @@ void AddSearch(Missile &missile, const AddMissileParameter & /*parameter*/)
 	}
 }
 
-void AddCboltArrow(Missile &missile, const AddMissileParameter &parameter)
+void AddCboltArrow(Missile &missile, AddMissileParameter &parameter)
 {
 	Point dst = parameter.dst;
 	missile._mirnd = GenerateRnd(15) + 1;
@@ -1605,7 +1598,7 @@ void AddCboltArrow(Missile &missile, const AddMissileParameter &parameter)
 	missile._mirange = 256;
 }
 
-void AddLArrow(Missile &missile, const AddMissileParameter &parameter)
+void AddLArrow(Missile &missile, AddMissileParameter &parameter)
 {
 	Point dst = parameter.dst;
 	if (missile.position.start == dst) {
@@ -1642,7 +1635,7 @@ void AddLArrow(Missile &missile, const AddMissileParameter &parameter)
 	missile._mlid = AddLight(missile.position.start, 5);
 }
 
-void AddArrow(Missile &missile, const AddMissileParameter &parameter)
+void AddArrow(Missile &missile, AddMissileParameter &parameter)
 {
 	Point dst = parameter.dst;
 	if (missile.position.start == dst) {
@@ -1692,7 +1685,7 @@ void UpdateVileMissPos(Missile &missile, Point dst)
 	}
 }
 
-void AddRndTeleport(Missile &missile, const AddMissileParameter &parameter)
+void AddRndTeleport(Missile &missile, AddMissileParameter &parameter)
 {
 	missile._mirange = 2;
 
@@ -1728,12 +1721,9 @@ void AddRndTeleport(Missile &missile, const AddMissileParameter &parameter)
 	}
 
 	missile.position.tile = targets[std::max<int32_t>(GenerateRnd(count), 0)];
-
-	if (missile._micaster == TARGET_MONSTERS)
-		ConsumeSpell(player, SPL_RNDTELEPORT);
 }
 
-void AddFirebolt(Missile &missile, const AddMissileParameter &parameter)
+void AddFirebolt(Missile &missile, AddMissileParameter &parameter)
 {
 	Point dst = parameter.dst;
 	if (missile.position.start == dst) {
@@ -1745,9 +1735,6 @@ void AddFirebolt(Missile &missile, const AddMissileParameter &parameter)
 		if (!missile.IsTrap()) {
 			sp += std::min(missile._mispllvl * 2, 47);
 		}
-
-		if (parameter.pParent == nullptr || parameter.pParent->_mitype != MIS_GUARDIAN)
-			ConsumeSpell(Players[missile._misource], SPL_FIREBOLT);
 	}
 	UpdateMissileVelocity(missile, dst, sp);
 	SetMissDir(missile, GetDirection16(missile.position.start, dst));
@@ -1757,7 +1744,7 @@ void AddFirebolt(Missile &missile, const AddMissileParameter &parameter)
 	missile._mlid = AddLight(missile.position.start, 8);
 }
 
-void AddMagmaball(Missile &missile, const AddMissileParameter &parameter)
+void AddMagmaball(Missile &missile, AddMissileParameter &parameter)
 {
 	UpdateMissileVelocity(missile, parameter.dst, 16);
 	missile.position.traveled.deltaX += 3 * missile.position.velocity.deltaX;
@@ -1772,7 +1759,7 @@ void AddMagmaball(Missile &missile, const AddMissileParameter &parameter)
 	missile._mlid = AddLight(missile.position.start, 8);
 }
 
-void AddTeleport(Missile &missile, const AddMissileParameter &parameter)
+void AddTeleport(Missile &missile, AddMissileParameter &parameter)
 {
 	Player &player = Players[missile._misource];
 
@@ -1785,14 +1772,14 @@ void AddTeleport(Missile &missile, const AddMissileParameter &parameter)
 	if (teleportDestination) {
 		missile.position.tile = *teleportDestination;
 		missile.position.start = *teleportDestination;
-		ConsumeSpell(player, SPL_TELEPORT);
 		missile._mirange = 2;
 	} else {
 		missile._miDelFlag = true;
+		parameter.spellFizzled = true;
 	}
 }
 
-void AddLightball(Missile &missile, const AddMissileParameter &parameter)
+void AddLightball(Missile &missile, AddMissileParameter &parameter)
 {
 	UpdateMissileVelocity(missile, parameter.dst, 16);
 	missile._miAnimFrame = GenerateRnd(8) + 1;
@@ -1802,7 +1789,7 @@ void AddLightball(Missile &missile, const AddMissileParameter &parameter)
 	missile.var2 = position.y;
 }
 
-void AddFirewall(Missile &missile, const AddMissileParameter &parameter)
+void AddFirewall(Missile &missile, AddMissileParameter &parameter)
 {
 	missile._midam = GenerateRndSum(10, 2) + 2;
 	missile._midam += missile._misource >= 0 ? Players[missile._misource]._pLevel : currlevel; // BUGFIX: missing parenthesis around ternary (fixed)
@@ -1820,7 +1807,7 @@ void AddFirewall(Missile &missile, const AddMissileParameter &parameter)
 	missile.var1 = missile._mirange - missile._miAnimLen;
 }
 
-void AddFireball(Missile &missile, const AddMissileParameter &parameter)
+void AddFireball(Missile &missile, AddMissileParameter &parameter)
 {
 	Point dst = parameter.dst;
 	if (missile.position.start == dst) {
@@ -1833,8 +1820,6 @@ void AddFireball(Missile &missile, const AddMissileParameter &parameter)
 
 		int dmg = 2 * (player._pLevel + GenerateRndSum(10, 2)) + 4;
 		missile._midam = ScaleSpellEffect(dmg, missile._mispllvl);
-
-		ConsumeSpell(player, SPL_FIREBALL);
 	}
 	UpdateMissileVelocity(missile, dst, sp);
 	SetMissDir(missile, GetDirection16(missile.position.start, dst));
@@ -1844,10 +1829,8 @@ void AddFireball(Missile &missile, const AddMissileParameter &parameter)
 	missile._mlid = AddLight(missile.position.start, 8);
 }
 
-void AddLightctrl(Missile &missile, const AddMissileParameter &parameter)
+void AddLightctrl(Missile &missile, AddMissileParameter &parameter)
 {
-	if (missile._midam == 0 && missile._micaster == TARGET_MONSTERS)
-		ConsumeSpell(Players[missile._misource], SPL_LIGHTNING);
 	missile.var1 = missile.position.start.x;
 	missile.var2 = missile.position.start.y;
 	UpdateMissileVelocity(missile, parameter.dst, 32);
@@ -1855,7 +1838,7 @@ void AddLightctrl(Missile &missile, const AddMissileParameter &parameter)
 	missile._mirange = 256;
 }
 
-void AddLightning(Missile &missile, const AddMissileParameter &parameter)
+void AddLightning(Missile &missile, AddMissileParameter &parameter)
 {
 	missile.position.start = parameter.dst;
 
@@ -1874,7 +1857,7 @@ void AddLightning(Missile &missile, const AddMissileParameter &parameter)
 	missile._mlid = AddLight(missile.position.tile, 4);
 }
 
-void AddMisexp(Missile &missile, const AddMissileParameter &parameter)
+void AddMisexp(Missile &missile, AddMissileParameter &parameter)
 {
 	if (missile._micaster != TARGET_MONSTERS && missile._misource >= 0) {
 		switch (Monsters[missile._misource].type().type) {
@@ -1904,7 +1887,7 @@ void AddMisexp(Missile &missile, const AddMissileParameter &parameter)
 	missile._mirange = missile._miAnimLen;
 }
 
-void AddWeapexp(Missile &missile, const AddMissileParameter &parameter)
+void AddWeapexp(Missile &missile, AddMissileParameter &parameter)
 {
 	missile.var2 = parameter.dst.x;
 	if (parameter.dst.x == 1)
@@ -1914,7 +1897,7 @@ void AddWeapexp(Missile &missile, const AddMissileParameter &parameter)
 	missile._mirange = missile._miAnimLen - 1;
 }
 
-void AddTown(Missile &missile, const AddMissileParameter &parameter)
+void AddTown(Missile &missile, AddMissileParameter &parameter)
 {
 	if (leveltype == DTYPE_TOWN) {
 		missile.position.tile = parameter.dst;
@@ -1968,7 +1951,7 @@ void AddTown(Missile &missile, const AddMissileParameter &parameter)
 	}
 }
 
-void AddFlash(Missile &missile, const AddMissileParameter & /*parameter*/)
+void AddFlash(Missile &missile, AddMissileParameter & /*parameter*/)
 {
 	switch (missile.sourceType()) {
 	case MissileSource::Player: {
@@ -1976,7 +1959,6 @@ void AddFlash(Missile &missile, const AddMissileParameter & /*parameter*/)
 		int dmg = GenerateRndSum(20, player._pLevel + 1) + player._pLevel + 1;
 		missile._midam = ScaleSpellEffect(dmg, missile._mispllvl);
 		missile._midam += missile._midam / 2;
-		ConsumeSpell(player, SPL_FLASH);
 	} break;
 	case MissileSource::Monster:
 		missile._midam = missile.sourceMonster()->level(sgGameInitInfo.nDifficulty) * 2;
@@ -1989,7 +1971,7 @@ void AddFlash(Missile &missile, const AddMissileParameter & /*parameter*/)
 	missile._mirange = 19;
 }
 
-void AddFlash2(Missile &missile, const AddMissileParameter & /*parameter*/)
+void AddFlash2(Missile &missile, AddMissileParameter & /*parameter*/)
 {
 	if (missile._micaster == TARGET_MONSTERS) {
 		if (!missile.IsTrap()) {
@@ -2005,7 +1987,7 @@ void AddFlash2(Missile &missile, const AddMissileParameter & /*parameter*/)
 	missile._mirange = 19;
 }
 
-void AddManashield(Missile &missile, const AddMissileParameter & /*parameter*/)
+void AddManashield(Missile &missile, AddMissileParameter & /*parameter*/)
 {
 	missile._miDelFlag = true;
 
@@ -2017,12 +1999,9 @@ void AddManashield(Missile &missile, const AddMissileParameter & /*parameter*/)
 	player.pManaShield = true;
 	if (&player == MyPlayer)
 		NetSendCmd(true, CMD_SETSHIELD);
-
-	if (missile._micaster == TARGET_MONSTERS)
-		ConsumeSpell(player, SPL_MANASHIELD);
 }
 
-void AddFiremove(Missile &missile, const AddMissileParameter &parameter)
+void AddFiremove(Missile &missile, AddMissileParameter &parameter)
 {
 	missile._midam = GenerateRnd(10) + Players[missile._misource]._pLevel + 1;
 	UpdateMissileVelocity(missile, parameter.dst, 16);
@@ -2031,7 +2010,7 @@ void AddFiremove(Missile &missile, const AddMissileParameter &parameter)
 	missile.position.offset.deltaY -= 32;
 }
 
-void AddGuardian(Missile &missile, const AddMissileParameter &parameter)
+void AddGuardian(Missile &missile, AddMissileParameter &parameter)
 {
 	Player &player = Players[missile._misource];
 
@@ -2064,13 +2043,13 @@ void AddGuardian(Missile &missile, const AddMissileParameter &parameter)
 
 	if (!spawnPosition) {
 		missile._miDelFlag = true;
+		parameter.spellFizzled = true;
 		return;
 	}
 
 	missile._miDelFlag = false;
 	missile.position.tile = *spawnPosition;
 	missile.position.start = *spawnPosition;
-	ConsumeSpell(player, SPL_GUARDIAN);
 
 	missile._mlid = AddLight(missile.position.tile, 1);
 	missile._mirange = missile._mispllvl + (player._pLevel / 2);
@@ -2086,12 +2065,11 @@ void AddGuardian(Missile &missile, const AddMissileParameter &parameter)
 	missile.var3 = 1;
 }
 
-void AddChain(Missile &missile, const AddMissileParameter &parameter)
+void AddChain(Missile &missile, AddMissileParameter &parameter)
 {
 	missile.var1 = parameter.dst.x;
 	missile.var2 = parameter.dst.y;
 	missile._mirange = 1;
-	ConsumeSpell(Players[missile._misource], SPL_CHAIN);
 }
 
 namespace {
@@ -2115,7 +2093,7 @@ void InitMissileAnimationFromMonster(Missile &mis, Direction midir, const Monste
 }
 } // namespace
 
-void AddRhino(Missile &missile, const AddMissileParameter &parameter)
+void AddRhino(Missile &missile, AddMissileParameter &parameter)
 {
 	Monster &monster = Monsters[missile._misource];
 
@@ -2135,7 +2113,7 @@ void AddRhino(Missile &missile, const AddMissileParameter &parameter)
 	PutMissile(missile);
 }
 
-void AddFlare(Missile &missile, const AddMissileParameter &parameter)
+void AddFlare(Missile &missile, AddMissileParameter &parameter)
 {
 	Point dst = parameter.dst;
 	if (missile.position.start == dst) {
@@ -2146,11 +2124,7 @@ void AddFlare(Missile &missile, const AddMissileParameter &parameter)
 	missile.var1 = missile.position.start.x;
 	missile.var2 = missile.position.start.y;
 	missile._mlid = AddLight(missile.position.start, 8);
-	if (missile._micaster == TARGET_MONSTERS) {
-		Player &player = Players[missile._misource];
-		ConsumeSpell(player, SPL_FLARE);
-		ApplyPlrDamage(player, 5);
-	} else if (missile._misource > 0) {
+	if (missile._micaster != TARGET_MONSTERS && missile._misource > 0) {
 		auto &monster = Monsters[missile._misource];
 		if (monster.type().type == MT_SUCCUBUS)
 			SetMissAnim(missile, MFILE_FLARE);
@@ -2167,7 +2141,7 @@ void AddFlare(Missile &missile, const AddMissileParameter &parameter)
 	}
 }
 
-void AddAcid(Missile &missile, const AddMissileParameter &parameter)
+void AddAcid(Missile &missile, AddMissileParameter &parameter)
 {
 	UpdateMissileVelocity(missile, parameter.dst, 16);
 	SetMissDir(missile, GetDirection16(missile.position.start, parameter.dst));
@@ -2181,7 +2155,7 @@ void AddAcid(Missile &missile, const AddMissileParameter &parameter)
 	PutMissile(missile);
 }
 
-void AddAcidpud(Missile &missile, const AddMissileParameter & /*parameter*/)
+void AddAcidpud(Missile &missile, AddMissileParameter & /*parameter*/)
 {
 	missile._miLightFlag = true;
 	int monst = missile._misource;
@@ -2189,7 +2163,7 @@ void AddAcidpud(Missile &missile, const AddMissileParameter & /*parameter*/)
 	missile._miPreFlag = true;
 }
 
-void AddStone(Missile &missile, const AddMissileParameter &parameter)
+void AddStone(Missile &missile, AddMissileParameter &parameter)
 {
 	std::optional<Point> targetMonsterPosition = FindClosestValidPosition(
 	    [](Point target) {
@@ -2217,6 +2191,7 @@ void AddStone(Missile &missile, const AddMissileParameter &parameter)
 
 	if (!targetMonsterPosition) {
 		missile._miDelFlag = true;
+		parameter.spellFizzled = true;
 		return;
 	}
 
@@ -2238,10 +2213,9 @@ void AddStone(Missile &missile, const AddMissileParameter &parameter)
 	if (missile._mirange > 15)
 		missile._mirange = 15;
 	missile._mirange <<= 4;
-	ConsumeSpell(player, SPL_STONE);
 }
 
-void AddGolem(Missile &missile, const AddMissileParameter &parameter)
+void AddGolem(Missile &missile, AddMissileParameter &parameter)
 {
 	missile._miDelFlag = true;
 
@@ -2251,8 +2225,6 @@ void AddGolem(Missile &missile, const AddMissileParameter &parameter)
 
 	if (golem.position.tile != GolemHoldingCell && &player == MyPlayer)
 		KillMyGolem();
-
-	ConsumeSpell(player, SPL_GOLEM);
 
 	if (golem.position.tile == GolemHoldingCell) {
 		std::optional<Point> spawnPosition = FindClosestValidPosition(
@@ -2267,14 +2239,14 @@ void AddGolem(Missile &missile, const AddMissileParameter &parameter)
 	}
 }
 
-void AddBoom(Missile &missile, const AddMissileParameter &parameter)
+void AddBoom(Missile &missile, AddMissileParameter &parameter)
 {
 	missile.position.tile = parameter.dst;
 	missile.position.start = parameter.dst;
 	missile._mirange = missile._miAnimLen;
 }
 
-void AddHeal(Missile &missile, const AddMissileParameter & /*parameter*/)
+void AddHeal(Missile &missile, AddMissileParameter & /*parameter*/)
 {
 	Player &player = Players[missile._misource];
 
@@ -2292,17 +2264,15 @@ void AddHeal(Missile &missile, const AddMissileParameter & /*parameter*/)
 	player._pHitPoints = std::min(player._pHitPoints + hp, player._pMaxHP);
 	player._pHPBase = std::min(player._pHPBase + hp, player._pMaxHPBase);
 
-	ConsumeSpell(player, SPL_HEAL);
 	missile._miDelFlag = true;
-	drawhpflag = true;
+	RedrawComponent(PanelDrawComponent::Health);
 }
 
-void AddHealOther(Missile &missile, const AddMissileParameter & /*parameter*/)
+void AddHealOther(Missile &missile, AddMissileParameter & /*parameter*/)
 {
 	Player &player = Players[missile._misource];
 
 	missile._miDelFlag = true;
-	ConsumeSpell(player, SPL_HEALOTHER);
 	if (&player == MyPlayer) {
 		NewCursor(CURSOR_HEALOTHER);
 		if (ControlMode != ControlTypes::KeyboardAndMouse)
@@ -2310,7 +2280,7 @@ void AddHealOther(Missile &missile, const AddMissileParameter & /*parameter*/)
 	}
 }
 
-void AddElement(Missile &missile, const AddMissileParameter &parameter)
+void AddElement(Missile &missile, AddMissileParameter &parameter)
 {
 	Point dst = parameter.dst;
 	if (missile.position.start == dst) {
@@ -2330,17 +2300,15 @@ void AddElement(Missile &missile, const AddMissileParameter &parameter)
 	missile.var4 = dst.x;
 	missile.var5 = dst.y;
 	missile._mlid = AddLight(missile.position.start, 8);
-	ConsumeSpell(player, SPL_ELEMENT);
 }
 
 extern void FocusOnInventory();
 
-void AddIdentify(Missile &missile, const AddMissileParameter & /*parameter*/)
+void AddIdentify(Missile &missile, AddMissileParameter & /*parameter*/)
 {
 	Player &player = Players[missile._misource];
 
 	missile._miDelFlag = true;
-	ConsumeSpell(player, SPL_IDENTIFY);
 	if (&player == MyPlayer) {
 		if (sbookflag)
 			sbookflag = false;
@@ -2353,7 +2321,7 @@ void AddIdentify(Missile &missile, const AddMissileParameter & /*parameter*/)
 	}
 }
 
-void AddFirewallC(Missile &missile, const AddMissileParameter &parameter)
+void AddFirewallC(Missile &missile, AddMissileParameter &parameter)
 {
 	std::optional<Point> spreadPosition = FindClosestValidPosition(
 	    [start = missile.position.start](Point target) {
@@ -2363,6 +2331,7 @@ void AddFirewallC(Missile &missile, const AddMissileParameter &parameter)
 
 	if (!spreadPosition) {
 		missile._miDelFlag = true;
+		parameter.spellFizzled = true;
 		return;
 	}
 
@@ -2374,30 +2343,25 @@ void AddFirewallC(Missile &missile, const AddMissileParameter &parameter)
 	missile.var3 = static_cast<int>(Left(Left(parameter.midir)));
 	missile.var4 = static_cast<int>(Right(Right(parameter.midir)));
 	missile._mirange = 7;
-	ConsumeSpell(Players[missile._misource], SPL_FIREWALL);
 }
 
-void AddInfra(Missile &missile, const AddMissileParameter & /*parameter*/)
+void AddInfra(Missile &missile, AddMissileParameter & /*parameter*/)
 {
 	Player &player = Players[missile._misource];
 
 	missile._mirange = ScaleSpellEffect(1584, missile._mispllvl);
 	missile._mirange += missile._mirange * player._pISplDur / 128;
-
-	if (missile._micaster == TARGET_MONSTERS)
-		ConsumeSpell(player, SPL_INFRA);
 }
 
-void AddWave(Missile &missile, const AddMissileParameter &parameter)
+void AddWave(Missile &missile, AddMissileParameter &parameter)
 {
 	missile.var1 = parameter.dst.x;
 	missile.var2 = parameter.dst.y;
 	missile._mirange = 1;
 	missile._miAnimFrame = 4;
-	ConsumeSpell(Players[missile._misource], SPL_WAVE);
 }
 
-void AddNova(Missile &missile, const AddMissileParameter &parameter)
+void AddNova(Missile &missile, AddMissileParameter &parameter)
 {
 	Player &player = Players[missile._misource];
 
@@ -2407,9 +2371,6 @@ void AddNova(Missile &missile, const AddMissileParameter &parameter)
 	if (!missile.IsTrap()) {
 		int dmg = GenerateRndSum(6, 5) + player._pLevel + 5;
 		missile._midam = ScaleSpellEffect(dmg / 2, missile._mispllvl);
-
-		if (missile._micaster == TARGET_MONSTERS)
-			ConsumeSpell(player, SPL_NOVA);
 	} else {
 		missile._midam = (currlevel / 2) + GenerateRndSum(3, 3);
 	}
@@ -2417,16 +2378,16 @@ void AddNova(Missile &missile, const AddMissileParameter &parameter)
 	missile._mirange = 1;
 }
 
-void AddBlodboil(Missile &missile, const AddMissileParameter & /*parameter*/)
+void AddBlodboil(Missile &missile, AddMissileParameter &parameter)
 {
 	Player &player = Players[missile._misource];
 
 	if (HasAnyOf(player._pSpellFlags, SpellFlag::RageActive | SpellFlag::RageCooldown) || player._pHitPoints <= player._pLevel << 6) {
 		missile._miDelFlag = true;
+		parameter.spellFizzled = true;
 		return;
 	}
 
-	ConsumeSpell(player, SPL_BLODBOIL);
 	int tmp = 3 * player._pLevel;
 	tmp <<= 7;
 	player._pSpellFlags |= SpellFlag::RageActive;
@@ -2434,16 +2395,15 @@ void AddBlodboil(Missile &missile, const AddMissileParameter & /*parameter*/)
 	int lvl = player._pLevel * 2;
 	missile._mirange = lvl + 10 * missile._mispllvl + 245;
 	CalcPlrItemVals(player, true);
-	force_redraw = 255;
+	RedrawEverything();
 	player.Say(HeroSpeech::Aaaaargh);
 }
 
-void AddRepair(Missile &missile, const AddMissileParameter & /*parameter*/)
+void AddRepair(Missile &missile, AddMissileParameter & /*parameter*/)
 {
 	Player &player = Players[missile._misource];
 
 	missile._miDelFlag = true;
-	ConsumeSpell(player, SPL_REPAIR);
 	if (&player == MyPlayer) {
 		if (sbookflag)
 			sbookflag = false;
@@ -2456,12 +2416,11 @@ void AddRepair(Missile &missile, const AddMissileParameter & /*parameter*/)
 	}
 }
 
-void AddRecharge(Missile &missile, const AddMissileParameter & /*parameter*/)
+void AddRecharge(Missile &missile, AddMissileParameter & /*parameter*/)
 {
 	Player &player = Players[missile._misource];
 
 	missile._miDelFlag = true;
-	ConsumeSpell(player, SPL_RECHARGE);
 	if (&player == MyPlayer) {
 		if (sbookflag)
 			sbookflag = false;
@@ -2474,12 +2433,11 @@ void AddRecharge(Missile &missile, const AddMissileParameter & /*parameter*/)
 	}
 }
 
-void AddDisarm(Missile &missile, const AddMissileParameter & /*parameter*/)
+void AddDisarm(Missile &missile, AddMissileParameter & /*parameter*/)
 {
 	Player &player = Players[missile._misource];
 
 	missile._miDelFlag = true;
-	ConsumeSpell(player, SPL_DISARM);
 	if (&player == MyPlayer) {
 		NewCursor(CURSOR_DISARM);
 		if (ControlMode != ControlTypes::KeyboardAndMouse) {
@@ -2491,7 +2449,7 @@ void AddDisarm(Missile &missile, const AddMissileParameter & /*parameter*/)
 	}
 }
 
-void AddApoca(Missile &missile, const AddMissileParameter & /*parameter*/)
+void AddApoca(Missile &missile, AddMissileParameter & /*parameter*/)
 {
 	Player &player = Players[missile._misource];
 
@@ -2504,10 +2462,9 @@ void AddApoca(Missile &missile, const AddMissileParameter & /*parameter*/)
 	int playerLevel = player._pLevel;
 	missile._midam = GenerateRndSum(6, playerLevel) + playerLevel;
 	missile._mirange = 255;
-	ConsumeSpell(player, SPL_APOCA);
 }
 
-void AddFlame(Missile &missile, const AddMissileParameter &parameter)
+void AddFlame(Missile &missile, AddMissileParameter &parameter)
 {
 	missile.var2 = 5 * missile._midam;
 	missile.position.start = parameter.dst;
@@ -2525,22 +2482,19 @@ void AddFlame(Missile &missile, const AddMissileParameter &parameter)
 	}
 }
 
-void AddFlamec(Missile &missile, const AddMissileParameter &parameter)
+void AddFlamec(Missile &missile, AddMissileParameter &parameter)
 {
 	Point dst = parameter.dst;
 	if (missile.position.start == parameter.dst) {
 		dst += parameter.midir;
 	}
 	UpdateMissileVelocity(missile, dst, 32);
-	if (missile._micaster == TARGET_MONSTERS) {
-		ConsumeSpell(Players[missile._misource], SPL_FLAME);
-	}
 	missile.var1 = missile.position.start.x;
 	missile.var2 = missile.position.start.y;
 	missile._mirange = 256;
 }
 
-void AddCbolt(Missile &missile, const AddMissileParameter &parameter)
+void AddCbolt(Missile &missile, AddMissileParameter &parameter)
 {
 	Point dst = parameter.dst;
 	missile._mirnd = GenerateRnd(15) + 1;
@@ -2558,7 +2512,7 @@ void AddCbolt(Missile &missile, const AddMissileParameter &parameter)
 	missile._mirange = 256;
 }
 
-void AddHbolt(Missile &missile, const AddMissileParameter &parameter)
+void AddHbolt(Missile &missile, AddMissileParameter &parameter)
 {
 	Point dst = parameter.dst;
 	if (missile.position.start == dst) {
@@ -2578,14 +2532,12 @@ void AddHbolt(Missile &missile, const AddMissileParameter &parameter)
 	missile.var2 = missile.position.start.y;
 	missile._mlid = AddLight(missile.position.start, 8);
 	missile._midam = GenerateRnd(10) + player._pLevel + 9;
-	ConsumeSpell(player, SPL_HBOLT);
 }
 
-void AddResurrect(Missile &missile, const AddMissileParameter & /*parameter*/)
+void AddResurrect(Missile &missile, AddMissileParameter & /*parameter*/)
 {
 	Player &player = Players[missile._misource];
 
-	ConsumeSpell(player, SPL_RESURRECT);
 	if (&player == MyPlayer) {
 		NewCursor(CURSOR_RESURRECT);
 		if (ControlMode != ControlTypes::KeyboardAndMouse)
@@ -2594,24 +2546,23 @@ void AddResurrect(Missile &missile, const AddMissileParameter & /*parameter*/)
 	missile._miDelFlag = true;
 }
 
-void AddResurrectBeam(Missile &missile, const AddMissileParameter &parameter)
+void AddResurrectBeam(Missile &missile, AddMissileParameter &parameter)
 {
 	missile.position.tile = parameter.dst;
 	missile.position.start = parameter.dst;
 	missile._mirange = MissileSpriteData[MFILE_RESSUR1].animLen[0];
 }
 
-void AddTelekinesis(Missile &missile, const AddMissileParameter & /*parameter*/)
+void AddTelekinesis(Missile &missile, AddMissileParameter & /*parameter*/)
 {
 	Player &player = Players[missile._misource];
 
 	missile._miDelFlag = true;
-	ConsumeSpell(player, SPL_TELEKINESIS);
 	if (&player == MyPlayer)
 		NewCursor(CURSOR_TELEKINESIS);
 }
 
-void AddBoneSpirit(Missile &missile, const AddMissileParameter &parameter)
+void AddBoneSpirit(Missile &missile, AddMissileParameter &parameter)
 {
 	Point dst = parameter.dst;
 	if (missile.position.start == parameter.dst) {
@@ -2625,21 +2576,16 @@ void AddBoneSpirit(Missile &missile, const AddMissileParameter &parameter)
 	missile.var4 = dst.x;
 	missile.var5 = dst.y;
 	missile._mlid = AddLight(missile.position.start, 8);
-	if (missile._micaster == TARGET_MONSTERS) {
-		Player &player = Players[missile._misource];
-		ConsumeSpell(player, SPL_BONESPIRIT);
-		ApplyPlrDamage(player, 6);
-	}
 }
 
-void AddRportal(Missile &missile, const AddMissileParameter & /*parameter*/)
+void AddRportal(Missile &missile, AddMissileParameter & /*parameter*/)
 {
 	missile._mirange = 100;
 	missile.var1 = 100 - missile._miAnimLen;
 	PutMissile(missile);
 }
 
-void AddDiabApoca(Missile &missile, const AddMissileParameter & /*parameter*/)
+void AddDiabApoca(Missile &missile, AddMissileParameter & /*parameter*/)
 {
 	for (const Player &player : Players) {
 		if (!player.plractive)
@@ -2692,8 +2638,11 @@ Missile *AddMissile(Point src, Point dst, Direction midir, missile_id mitype, mi
 		PlaySfxLoc(missileData.mlSFX, missile.position.start);
 	}
 
-	AddMissileParameter parameter = { dst, midir, pParent };
+	AddMissileParameter parameter = { dst, midir, pParent, false };
 	missileData.mAddProc(missile, parameter);
+	if (parameter.spellFizzled) {
+		return nullptr;
+	}
 
 	return &missile;
 }
@@ -3840,7 +3789,7 @@ void MI_Blodboil(Missile &missile)
 
 	CalcPlrItemVals(player, true);
 	ApplyPlrDamage(player, 0, 1, hpdif);
-	force_redraw = 255;
+	RedrawEverything();
 	player.Say(HeroSpeech::HeavyBreathing);
 }
 

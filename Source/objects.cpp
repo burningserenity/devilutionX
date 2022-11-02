@@ -17,6 +17,7 @@
 #ifdef _DEBUG
 #include "debug.h"
 #endif
+#include "engine/backbuffer_state.hpp"
 #include "engine/load_cel.hpp"
 #include "engine/load_file.hpp"
 #include "engine/points_in_rectangle_range.hpp"
@@ -469,7 +470,7 @@ void AddCandles()
  * @param affectedArea The map region to be updated when this object is activated by the player.
  * @param msg The quest text to play when the player activates the book.
  */
-void AddBookLever(_object_id type, Rectangle affectedArea, _speech_id msg)
+void AddBookLever(_object_id type, WorldTileRectangle affectedArea, _speech_id msg)
 {
 	std::optional<Point> position = GetRandomObjectPosition({ 2, 2 });
 	if (!position)
@@ -647,7 +648,7 @@ void AddChestTraps()
 	}
 }
 
-void LoadMapObjects(const char *path, Point start, Rectangle mapRange = {}, int leveridx = 0)
+void LoadMapObjects(const char *path, Point start, WorldTileRectangle mapRange = {}, int leveridx = 0)
 {
 	LoadingMapObjects = true;
 	ApplyObjectLighting = true;
@@ -920,10 +921,10 @@ void AddStoryBooks()
 
 void AddHookedBodies(int freq)
 {
-	for (int j = 0; j < DMAXY; j++) {
-		int jj = 16 + j * 2;
-		for (int i = 0; i < DMAXX; i++) {
-			int ii = 16 + i * 2;
+	for (WorldTileCoord j = 0; j < DMAXY; j++) {
+		WorldTileCoord jj = 16 + j * 2;
+		for (WorldTileCoord i = 0; i < DMAXX; i++) {
+			WorldTileCoord ii = 16 + i * 2;
 			if (dungeon[i][j] != 1 && dungeon[i][j] != 2)
 				continue;
 			if (!FlipCoin(freq))
@@ -2000,7 +2001,7 @@ void OperateBookLever(Object &questBook, bool sendmsg)
 				SpawnUnique(UITEM_OPTAMULET, SetPiece.position.megaToWorld() + Displacement { 5, 5 });
 				auto tren = TransVal;
 				TransVal = 9;
-				DRLG_MRectTrans({ questBook._oVar1, questBook._oVar2 }, { questBook._oVar3, questBook._oVar4 });
+				DRLG_MRectTrans(WorldTilePosition(questBook._oVar1, questBook._oVar2), WorldTilePosition(questBook._oVar3, questBook._oVar4));
 				TransVal = tren;
 			}
 		}
@@ -2289,7 +2290,7 @@ void OperateShrineMysterious(Player &player)
 
 	CheckStats(player);
 	CalcPlrInv(player, true);
-	force_redraw = 255;
+	RedrawEverything();
 
 	InitDiabloMsg(EMSG_SHRINE_MYSTERIOUS);
 }
@@ -2432,7 +2433,7 @@ void OperateShrineStone(Player &player)
 			item._iCharges = item._iMaxCharges;
 	}
 
-	force_redraw = 255;
+	RedrawEverything();
 
 	InitDiabloMsg(EMSG_SHRINE_STONE);
 }
@@ -2530,7 +2531,7 @@ void OperateShrineCostOfWisdom(Player &player, spell_id spellId, diablo_message 
 		player._pMaxManaBase = 0;
 	}
 
-	force_redraw = 255;
+	RedrawEverything();
 
 	InitDiabloMsg(message);
 }
@@ -2555,7 +2556,7 @@ void OperateShrineCryptic(Player &player)
 
 	InitDiabloMsg(EMSG_SHRINE_CRYPTIC);
 
-	force_redraw = 255;
+	RedrawEverything();
 }
 
 void OperateShrineEldritch(Player &player)
@@ -2568,18 +2569,25 @@ void OperateShrineEldritch(Player &player)
 			continue;
 		}
 		if (IsAnyOf(item._iMiscId, IMISC_HEAL, IMISC_MANA)) {
+			// Reinitializing the item zeroes out the seed, we save and restore here to avoid triggering false
+			// positives on duplicated item checks (e.g. when picking up the item).
+			auto seed = item._iSeed;
 			InitializeItem(item, ItemMiscIdIdx(IMISC_REJUV));
+			item._iSeed = seed;
 			item._iStatFlag = true;
 			continue;
 		}
 		if (IsAnyOf(item._iMiscId, IMISC_FULLHEAL, IMISC_FULLMANA)) {
+			// As above.
+			auto seed = item._iSeed;
 			InitializeItem(item, ItemMiscIdIdx(IMISC_FULLREJUV));
+			item._iSeed = seed;
 			item._iStatFlag = true;
 			continue;
 		}
 	}
 
-	force_redraw = 255;
+	RedrawEverything();
 
 	InitDiabloMsg(EMSG_SHRINE_ELDRITCH);
 }
@@ -2592,7 +2600,7 @@ void OperateShrineEerie(Player &player)
 	ModifyPlrMag(player, 2);
 	CheckStats(player);
 	CalcPlrInv(player, true);
-	force_redraw = 255;
+	RedrawEverything();
 
 	InitDiabloMsg(EMSG_SHRINE_EERIE);
 }
@@ -2621,7 +2629,7 @@ void OperateShrineDivine(Player &player, Point spawnPosition)
 	player._pHitPoints = player._pMaxHP;
 	player._pHPBase = player._pMaxHPBase;
 
-	force_redraw = 255;
+	RedrawEverything();
 
 	InitDiabloMsg(EMSG_SHRINE_DIVINE);
 }
@@ -2669,7 +2677,7 @@ void OperateShrineSpooky(const Player &player)
 	myPlayer._pMana = myPlayer._pMaxMana;
 	myPlayer._pManaBase = myPlayer._pMaxManaBase;
 
-	force_redraw = 255;
+	RedrawEverything();
 
 	InitDiabloMsg(EMSG_SHRINE_SPOOKY2);
 }
@@ -2682,7 +2690,7 @@ void OperateShrineAbandoned(Player &player)
 	ModifyPlrDex(player, 2);
 	CheckStats(player);
 	CalcPlrInv(player, true);
-	force_redraw = 255;
+	RedrawEverything();
 
 	InitDiabloMsg(EMSG_SHRINE_ABANDONED);
 }
@@ -2695,7 +2703,7 @@ void OperateShrineCreepy(Player &player)
 	ModifyPlrStr(player, 2);
 	CheckStats(player);
 	CalcPlrInv(player, true);
-	force_redraw = 255;
+	RedrawEverything();
 
 	InitDiabloMsg(EMSG_SHRINE_CREEPY);
 }
@@ -2708,7 +2716,7 @@ void OperateShrineQuiet(Player &player)
 	ModifyPlrVit(player, 2);
 	CheckStats(player);
 	CalcPlrInv(player, true);
-	force_redraw = 255;
+	RedrawEverything();
 
 	InitDiabloMsg(EMSG_SHRINE_QUIET);
 }
@@ -2737,7 +2745,7 @@ void OperateShrineGlimmering(Player &player)
 	}
 
 	CalcPlrInv(player, true);
-	force_redraw = 255;
+	RedrawEverything();
 
 	InitDiabloMsg(EMSG_SHRINE_GLIMMERING);
 }
@@ -2765,7 +2773,7 @@ void OperateShrineTainted(const Player &player)
 
 	CheckStats(myPlayer);
 	CalcPlrInv(myPlayer, true);
-	force_redraw = 255;
+	RedrawEverything();
 
 	InitDiabloMsg(EMSG_SHRINE_TAINTED2);
 }
@@ -2806,7 +2814,7 @@ void OperateShrineOily(Player &player, Point spawnPosition)
 
 	CheckStats(player);
 	CalcPlrInv(player, true);
-	force_redraw = 255;
+	RedrawEverything();
 
 	AddMissile(
 	    spawnPosition,
@@ -2836,7 +2844,7 @@ void OperateShrineGlowing(Player &player)
 		player._pExperience = 0;
 
 	CheckStats(player);
-	force_redraw = 255;
+	RedrawEverything();
 
 	InitDiabloMsg(EMSG_SHRINE_GLOWING);
 }
@@ -2850,7 +2858,7 @@ void OperateShrineMendicant(Player &player)
 	AddPlrExperience(player, player._pLevel, gold);
 	TakePlrsMoney(gold);
 
-	force_redraw = 255;
+	RedrawEverything();
 
 	InitDiabloMsg(EMSG_SHRINE_MENDICANT);
 }
@@ -2877,7 +2885,7 @@ void OperateShrineSparkling(Player &player, Point spawnPosition)
 	    3 * currlevel + 2,
 	    0);
 
-	force_redraw = 255;
+	RedrawEverything();
 
 	InitDiabloMsg(EMSG_SHRINE_SPARKLING);
 }
@@ -2913,7 +2921,7 @@ void OperateShrineShimmering(Player &player)
 	player._pMana = player._pMaxMana;
 	player._pManaBase = player._pMaxManaBase;
 
-	force_redraw = 255;
+	RedrawEverything();
 
 	InitDiabloMsg(EMSG_SHRINE_SHIMMERING);
 }
@@ -2942,7 +2950,7 @@ void OperateShrineSolar(Player &player)
 
 	CheckStats(player);
 	CalcPlrInv(player, true);
-	force_redraw = 255;
+	RedrawEverything();
 }
 
 void OperateShrineMurphys(Player &player)
@@ -3193,7 +3201,7 @@ void OperateGoatShrine(Player &player, Object &object, _sfx_id sType)
 	object._oVar1 = FindValidShrine();
 	OperateShrine(player, object, sType);
 	object._oAnimDelay = 2;
-	force_redraw = 255;
+	RedrawEverything();
 }
 
 void OperateCauldron(Player &player, Object &object, _sfx_id sType)
@@ -3203,7 +3211,7 @@ void OperateCauldron(Player &player, Object &object, _sfx_id sType)
 	OperateShrine(player, object, sType);
 	object._oAnimFrame = 3;
 	object._oAnimFlag = false;
-	force_redraw = 255;
+	RedrawEverything();
 }
 
 bool OperateFountains(Player &player, Object &fountain)
@@ -3302,7 +3310,7 @@ bool OperateFountains(Player &player, Object &fountain)
 	default:
 		break;
 	}
-	force_redraw = 255;
+	RedrawEverything();
 	return applied;
 }
 
@@ -3521,7 +3529,7 @@ void SyncQSTLever(const Object &qstLever)
 		if (qstLever._otype == OBJ_BLINDBOOK) {
 			auto tren = TransVal;
 			TransVal = 9;
-			DRLG_MRectTrans({ qstLever._oVar1, qstLever._oVar2 }, { qstLever._oVar3, qstLever._oVar4 });
+			DRLG_MRectTrans(WorldTilePosition(qstLever._oVar1, qstLever._oVar2), WorldTilePosition(qstLever._oVar3, qstLever._oVar4));
 			TransVal = tren;
 		}
 	}
@@ -3642,7 +3650,7 @@ void LoadLevelObjects(uint16_t filesWidths[65])
 
 		ObjFileList[numobjfiles] = static_cast<object_graphic_id>(i);
 		char filestr[32];
-		*BufCopy(filestr, "objects\\", ObjMasterLoadList[i], ".cel") = '\0';
+		*BufCopy(filestr, "objects\\", ObjMasterLoadList[i]) = '\0';
 		pObjCels[numobjfiles] = LoadCel(filestr, filesWidths[i]);
 		numobjfiles++;
 	}
@@ -3989,7 +3997,7 @@ Object *AddObject(_object_id objType, Point objPos)
 		AddDoor(object);
 		break;
 	case OBJ_BOOK2R:
-		object.InitializeBook({ SetPiece.position, { SetPiece.size.width + 1, SetPiece.size.height + 1 } });
+		object.InitializeBook({ SetPiece.position, WorldTileSize(SetPiece.size.width + 1, SetPiece.size.height + 1) });
 		break;
 	case OBJ_CHEST1:
 	case OBJ_CHEST2:
@@ -4139,7 +4147,7 @@ void OperateTrap(Object &trap)
 	Point triggerPosition = { trap._oVar1, trap._oVar2 };
 	Point target = triggerPosition;
 
-	PointsInRectangleRange searchArea { Rectangle { target, 1 } };
+	auto searchArea = PointsInRectangle(Rectangle { target, 1 });
 	// look for a player near the trigger (using a reverse search to match vanilla behaviour)
 	auto foundPosition = std::find_if(searchArea.crbegin(), searchArea.crend(), [](Point testPosition) { return InDungeonBounds(testPosition) && dPlayer[testPosition.x][testPosition.y] != 0; });
 	if (foundPosition != searchArea.crend()) {
@@ -4310,14 +4318,14 @@ void ObjChangeMapResync(int x1, int y1, int x2, int y2)
 	}
 }
 
-int ItemMiscIdIdx(item_misc_id imiscid)
+_item_indexes ItemMiscIdIdx(item_misc_id imiscid)
 {
-	int i = IDI_GOLD;
+	std::underlying_type_t<_item_indexes> i = IDI_GOLD;
 	while (AllItemsList[i].iRnd == IDROP_NEVER || AllItemsList[i].iMiscId != imiscid) {
 		i++;
 	}
 
-	return i;
+	return static_cast<_item_indexes>(i);
 }
 
 void OperateObject(Player &player, Object &object)

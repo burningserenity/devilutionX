@@ -65,6 +65,11 @@ enum _item_indexes : int16_t { // TODO defines all indexes in AllItemsList
 	IDI_FULLNOTE,
 	IDI_BROWNSUIT,
 	IDI_GREYSUIT,
+	IDI_BOOK1 = 114,
+	IDI_BOOK2,
+	IDI_BOOK3,
+	IDI_BOOK4,
+	IDI_BARBARIAN = 139,
 	IDI_RUNEOFSTONE = 165,
 	IDI_SORCERER_DIABLO,
 
@@ -355,7 +360,7 @@ enum class ItemSpecialEffect : uint32_t {
 };
 use_enum_as_flags(ItemSpecialEffect);
 
-enum class ItemSpecialEffectHf : uint32_t {
+enum class ItemSpecialEffectHf : uint8_t {
 	// clang-format off
 	None               = 0,
 	Devastation        = 1 << 0,

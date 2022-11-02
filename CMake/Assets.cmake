@@ -41,6 +41,9 @@ if (Gettext_FOUND)
 endif()
 
 set(devilutionx_assets
+  arena/church.dun
+  arena/circle_of_death.dun
+  arena/hell.dun
   data/boxleftend.clx
   data/boxmiddle.clx
   data/boxrightend.clx
@@ -76,6 +79,8 @@ set(devilutionx_assets
   fonts/12-20.bin
   fonts/12-20.clx
   fonts/12-26.clx
+  fonts/12-e0.clx
+  fonts/12-e0.bin
   fonts/22-00.bin
   fonts/22-00.clx
   fonts/22-01.bin
