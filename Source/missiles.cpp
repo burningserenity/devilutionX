@@ -131,7 +131,12 @@ void PutMissile(Missile &missile)
 		return;
 	}
 
-	dFlags[position.x][position.y] |= DungeonFlag::Missile;
+	DungeonFlag &flags = dFlags[position.x][position.y];
+	flags |= DungeonFlag::Missile;
+	if (missile._mitype == MIS_FIREWALL)
+		flags |= DungeonFlag::MissileFireWall;
+	if (missile._mitype == MIS_LIGHTWALL)
+		flags |= DungeonFlag::MissileLightningWall;
 
 	if (missile._miPreFlag)
 		MissilePreFlag = true;
@@ -446,7 +451,7 @@ void CheckMissileCol(Missile &missile, int minDamage, int maxDamage, bool isDama
 	if (IsMissileBlockedByTile({ mx, my })) {
 		Object *object = FindObjectAtPosition({ mx, my });
 		if (object != nullptr && object->IsBreakable()) {
-			BreakObjectMissile(*object);
+			BreakObjectMissile(missile.sourcePlayer(), *object);
 		}
 
 		if (!dontDeleteOnCollision)
@@ -1107,7 +1112,7 @@ void InitMissiles()
 	Missiles.clear();
 	for (int j = 0; j < MAXDUNY; j++) {
 		for (int i = 0; i < MAXDUNX; i++) { // NOLINT(modernize-loop-convert)
-			dFlags[i][j] &= ~DungeonFlag::Missile;
+			dFlags[i][j] &= ~(DungeonFlag::Missile | DungeonFlag::MissileFireWall | DungeonFlag::MissileLightningWall);
 		}
 	}
 }
@@ -4070,7 +4075,7 @@ void ProcessMissiles()
 	for (auto &missile : Missiles) {
 		const auto &position = missile.position.tile;
 		if (InDungeonBounds(position)) {
-			dFlags[position.x][position.y] &= ~DungeonFlag::Missile;
+			dFlags[position.x][position.y] &= ~(DungeonFlag::Missile | DungeonFlag::MissileFireWall | DungeonFlag::MissileLightningWall);
 		} else {
 			missile._miDelFlag = true;
 		}

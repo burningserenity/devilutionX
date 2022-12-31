@@ -117,6 +117,9 @@ option(PIE "Generate position-independent code" OFF)
 cmake_dependent_option(DEVILUTIONX_DISABLE_RTTI "Disable RTTI" ON "NONET" OFF)
 cmake_dependent_option(DEVILUTIONX_DISABLE_EXCEPTIONS "Disable exceptions" ON "NONET" OFF)
 RELEASE_OPTION(DEVILUTIONX_STATIC_CXX_STDLIB "Link C++ standard library statically (if available)")
+option(DEVILUTIONX_PROFILE_GENERATE "Build a binary that generates the profile for PGO" OFF)
+option(DEVILUTIONX_PROFILE_USE "Build with PGO using the given profile file" OFF)
+set(DEVILUTIONX_PROFILE_DIR "" CACHE STRING "Directory where the profile is stored")
 
 include(MoldLinker)
 
@@ -213,23 +216,25 @@ endif()
 
 # Remove unused symbols in non-debug mode.
 # This is useful even with LTO (-84 KiB with MinSizeRel).
-if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-  # For some reason, adding to CMAKE_CXX_FLAGS results in a slightly smaller
-  # binary than using `add_compile/link_options`
-
-  set(_extra_flags "-ffunction-sections -fdata-sections")
+#
+# PS4 toolchain crashes in `create-fself` when linking with these flags, so we exclude it:
+# https://github.com/PacBrew/ps4-openorbis/issues/8
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang" AND NOT PS4)
+  add_compile_options("$<$<NOT:$<CONFIG:Debug>>:-ffunction-sections;-fdata-sections>")
   if(APPLE)
-    set(_extra_flags "${_extra_flags} -Wl,-dead_strip")
+    add_link_options("$<$<NOT:$<CONFIG:Debug>>:LINKER:-dead_strip>")
   else()
-    set(_extra_flags "${_extra_flags} -Wl,--gc-sections,--as-needed")
+    add_link_options("$<$<NOT:$<CONFIG:Debug>>:LINKER:--gc-sections,--as-needed>")
   endif()
+endif()
 
-  set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} ${_extra_flags}")
-  set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} ${_extra_flags}")
-  set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} ${_extra_flags}")
-  set(CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO} ${_extra_flags}")
-  set(CMAKE_CXX_FLAGS_MINSIZEREL "${CMAKE_CXX_FLAGS_MINSIZEREL} ${_extra_flags}")
-  set(CMAKE_C_FLAGS_MINSIZEREL "${CMAKE_C_FLAGS_MINSIZEREL} ${_extra_flags}")
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+  add_compile_options("$<$<BOOL:${DEVILUTIONX_PROFILE_GENERATE}>:-fprofile-generate>")
+  add_link_options("$<$<BOOL:${DEVILUTIONX_PROFILE_GENERATE}>:-fprofile-generate>")
+  add_compile_options("$<$<BOOL:${DEVILUTIONX_PROFILE_USE}>:-fprofile-use>")
+  add_link_options("$<$<BOOL:${DEVILUTIONX_PROFILE_USE}>:-fprofile-use>")
+  add_compile_options("$<$<BOOL:${DEVILUTIONX_PROFILE_DIR}>:-fprofile-dir=${DEVILUTIONX_PROFILE_DIR}>")
+  add_link_options("$<$<BOOL:${DEVILUTIONX_PROFILE_DIR}>:-fprofile-dir=${DEVILUTIONX_PROFILE_DIR}>")
 endif()
 
 # Not a genexp because CMake doesn't support it
@@ -302,7 +307,7 @@ else()
         TARGET ${BIN_TARGET} POST_BUILD
         DEPENDS ${BIN_TARGET}
         COMMAND $<$<CONFIG:Release>:${CMAKE_STRIP}>
-        ARGS --strip-all $<TARGET_FILE:${BIN_TARGET}>)
+        ARGS $<TARGET_FILE:${BIN_TARGET}>)
     endif()
 endif()
 

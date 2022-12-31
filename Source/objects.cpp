@@ -1880,6 +1880,9 @@ void UpdateLeverState(Object &object)
 		return;
 	}
 
+	if (setlevel && setlvlnum == SL_VILEBETRAYER)
+		ObjectAtPosition({ 35, 36 })._oVar5++;
+
 	ObjChangeMap(object._oVar1, object._oVar2, object._oVar3, object._oVar4);
 }
 
@@ -1940,6 +1943,8 @@ void OperateBook(Player &player, Object &book)
 	book._oSelFlag = 0;
 	book._oAnimFrame++;
 
+	NetSendCmdLoc(MyPlayerId, false, CMD_OPERATEOBJ, book.position);
+
 	if (!setlevel) {
 		return;
 	}
@@ -1982,12 +1987,15 @@ void OperateBookLever(Object &questBook, bool sendmsg)
 			Quests[Q_BLIND]._qactive = QUEST_ACTIVE;
 			Quests[Q_BLIND]._qlog = true;
 			Quests[Q_BLIND]._qvar1 = 1;
+			NetSendCmdQuest(true, Quests[Q_BLIND]);
 		}
 		if (questBook._otype == OBJ_BLOODBOOK && Quests[Q_BLOOD]._qvar1 == 0) {
 			Quests[Q_BLOOD]._qactive = QUEST_ACTIVE;
 			Quests[Q_BLOOD]._qlog = true;
 			Quests[Q_BLOOD]._qvar1 = 1;
-			SpawnQuestItem(IDI_BLDSTONE, SetPiece.position.megaToWorld() + Displacement { 9, 17 }, 0, 1);
+			NetSendCmdQuest(true, Quests[Q_BLOOD]);
+			if (sendmsg)
+				SpawnQuestItem(IDI_BLDSTONE, SetPiece.position.megaToWorld() + Displacement { 9, 17 }, 0, 1, true);
 		}
 		if (questBook._otype == OBJ_STEELTOME && Quests[Q_WARLORD]._qvar1 == 0) {
 			Quests[Q_WARLORD]._qactive = QUEST_ACTIVE;
@@ -1998,7 +2006,8 @@ void OperateBookLever(Object &questBook, bool sendmsg)
 			if (questBook._otype != OBJ_BLOODBOOK)
 				ObjChangeMap(questBook._oVar1, questBook._oVar2, questBook._oVar3, questBook._oVar4);
 			if (questBook._otype == OBJ_BLINDBOOK) {
-				SpawnUnique(UITEM_OPTAMULET, SetPiece.position.megaToWorld() + Displacement { 5, 5 });
+				if (sendmsg)
+					SpawnUnique(UITEM_OPTAMULET, SetPiece.position.megaToWorld() + Displacement { 5, 5 });
 				auto tren = TransVal;
 				TransVal = 9;
 				DRLG_MRectTrans(WorldTilePosition(questBook._oVar1, questBook._oVar2), WorldTilePosition(questBook._oVar3, questBook._oVar4));
@@ -2131,11 +2140,11 @@ void OperateMushroomPatch(const Player &player, Object &mushroomPatch)
 
 	PlaySfxLoc(IS_CHEST, mushroomPatch.position);
 	Point pos = GetSuperItemLoc(mushroomPatch.position);
-	SpawnQuestItem(IDI_MUSHROOM, pos, 0, 0);
+	SpawnQuestItem(IDI_MUSHROOM, pos, 0, 0, true);
 	Quests[Q_MUSHROOM]._qvar1 = QS_MUSHSPAWNED;
 }
 
-void OperateInnSignChest(const Player &player, Object &questContainer)
+void OperateInnSignChest(const Player &player, Object &questContainer, bool sendmsg)
 {
 	if (ActiveItemCount >= MAXITEMS) {
 		return;
@@ -2156,8 +2165,12 @@ void OperateInnSignChest(const Player &player, Object &questContainer)
 	questContainer._oAnimFrame += 2;
 
 	PlaySfxLoc(IS_CHEST, questContainer.position);
-	Point pos = GetSuperItemLoc(questContainer.position);
-	SpawnQuestItem(IDI_BANNER, pos, 0, 0);
+
+	if (sendmsg) {
+		Point pos = GetSuperItemLoc(questContainer.position);
+		SpawnQuestItem(IDI_BANNER, pos, 0, 0, true);
+		NetSendCmdLoc(MyPlayerId, true, CMD_OPERATEOBJ, questContainer.position);
+	}
 }
 
 void OperateSlainHero(const Player &player, Object &corpse)
@@ -2232,7 +2245,7 @@ void OperateSarcophagus(Object &sarcophagus, bool sendMsg, bool sendLootMsg)
 		NetSendCmdLoc(MyPlayerId, false, CMD_OPERATEOBJ, sarcophagus.position);
 }
 
-void OperatePedestal(Player &player, Object &pedestal)
+void OperatePedestal(Player &player, Object &pedestal, bool sendmsg)
 {
 	if (ActiveItemCount >= MAXITEMS) {
 		return;
@@ -2247,19 +2260,31 @@ void OperatePedestal(Player &player, Object &pedestal)
 	if (pedestal._oVar6 == 1) {
 		PlaySfxLoc(LS_PUDDLE, pedestal.position);
 		ObjChangeMap(SetPiece.position.x, SetPiece.position.y + 3, SetPiece.position.x + 2, SetPiece.position.y + 7);
-		SpawnQuestItem(IDI_BLDSTONE, SetPiece.position.megaToWorld() + Displacement { 3, 10 }, 0, 1);
+		if (sendmsg)
+			SpawnQuestItem(IDI_BLDSTONE, SetPiece.position.megaToWorld() + Displacement { 3, 10 }, 0, 1, true);
 	}
 	if (pedestal._oVar6 == 2) {
 		PlaySfxLoc(LS_PUDDLE, pedestal.position);
 		ObjChangeMap(SetPiece.position.x + 6, SetPiece.position.y + 3, SetPiece.position.x + SetPiece.size.width, SetPiece.position.y + 7);
-		SpawnQuestItem(IDI_BLDSTONE, SetPiece.position.megaToWorld() + Displacement { 15, 10 }, 0, 1);
+		if (sendmsg)
+			SpawnQuestItem(IDI_BLDSTONE, SetPiece.position.megaToWorld() + Displacement { 15, 10 }, 0, 1, true);
 	}
 	if (pedestal._oVar6 == 3) {
 		PlaySfxLoc(LS_BLODSTAR, pedestal.position);
 		ObjChangeMap(pedestal._oVar1, pedestal._oVar2, pedestal._oVar3, pedestal._oVar4);
 		LoadMapObjects("levels\\l2data\\blood2.dun", SetPiece.position.megaToWorld());
-		SpawnUnique(UITEM_ARMOFVAL, SetPiece.position.megaToWorld() + Displacement { 9, 3 });
+		if (sendmsg)
+			SpawnUnique(UITEM_ARMOFVAL, SetPiece.position.megaToWorld() + Displacement { 9, 3 });
 		pedestal._oSelFlag = 0;
+	}
+
+	if (sendmsg) {
+		NetSendCmdLoc(MyPlayerId, false, CMD_OPERATEOBJ, pedestal.position);
+		if (gbIsMultiplayer) {
+			// Store added stones to pedestal in qvar2, cause we get only one CMD_OPERATEOBJ from DeltaLoadLevel even if we add multiple stones
+			Quests[Q_BLOOD]._qvar2++;
+			NetSendCmdQuest(true, Quests[Q_BLOOD]);
+		}
 	}
 }
 
@@ -3399,7 +3424,8 @@ void OperateLazStand(Object &stand)
 	stand._oAnimFrame++;
 	stand._oSelFlag = 0;
 	Point pos = GetSuperItemLoc(stand.position);
-	SpawnQuestItem(IDI_LAZSTAFF, pos, 0, 0);
+	SpawnQuestItem(IDI_LAZSTAFF, pos, 0, 0, true);
+	NetSendCmdLoc(MyPlayerId, false, CMD_OPERATEOBJ, stand.position);
 }
 
 /**
@@ -3426,7 +3452,7 @@ bool AreAllCruxesOfTypeBroken(int cruxType)
 	return true;
 }
 
-void BreakCrux(Object &crux)
+void BreakCrux(const Player *player, Object &crux)
 {
 	crux._oAnimFlag = true;
 	crux._oAnimFrame = 1;
@@ -3435,6 +3461,9 @@ void BreakCrux(Object &crux)
 	crux._oMissFlag = true;
 	crux._oBreak = -1;
 	crux._oSelFlag = 0;
+
+	if (player == MyPlayer || player == nullptr)
+		NetSendCmdLoc(MyPlayerId, false, CMD_BREAKOBJ, crux.position);
 
 	if (!AreAllCruxesOfTypeBroken(crux._oVar8))
 		return;
@@ -3535,18 +3564,28 @@ void SyncQSTLever(const Object &qstLever)
 	}
 }
 
-void SyncPedestal(const Object &pedestal, Point origin, int width)
+void SyncPedestal(const Object &pedestal)
 {
 	if (pedestal._oVar6 == 1)
-		ObjChangeMapResync(origin.x, origin.y + 3, origin.x + 2, origin.y + 7);
+		ObjChangeMapResync(SetPiece.position.x, SetPiece.position.y + 3, SetPiece.position.x + 2, SetPiece.position.y + 7);
 	if (pedestal._oVar6 == 2) {
-		ObjChangeMapResync(origin.x, origin.y + 3, origin.x + 2, origin.y + 7);
-		ObjChangeMapResync(origin.x + 6, origin.y + 3, origin.x + width, origin.y + 7);
+		ObjChangeMapResync(SetPiece.position.x, SetPiece.position.y + 3, SetPiece.position.x + 2, SetPiece.position.y + 7);
+		ObjChangeMapResync(SetPiece.position.x + 6, SetPiece.position.y + 3, SetPiece.position.x + SetPiece.size.width, SetPiece.position.y + 7);
 	}
-	if (pedestal._oVar6 == 3) {
+	if (pedestal._oVar6 >= 3) {
 		ObjChangeMapResync(pedestal._oVar1, pedestal._oVar2, pedestal._oVar3, pedestal._oVar4);
-		LoadMapObjects("levels\\l2data\\blood2.dun", origin.megaToWorld());
+		LoadMapObjects("levels\\l2data\\blood2.dun", SetPiece.position.megaToWorld());
 	}
+}
+
+void UpdatePedestalState(Object &pedestal)
+{
+	int addedStones = Quests[Q_BLOOD]._qvar2;
+	pedestal._oAnimFrame += addedStones;
+	pedestal._oVar6 += addedStones;
+	SyncPedestal(pedestal);
+	if (pedestal._oVar6 >= 3)
+		pedestal._oSelFlag = 0;
 }
 
 void SyncDoor(Object &door)
@@ -3891,7 +3930,7 @@ void InitObjects()
 				AddBookLever(OBJ_STEELTOME, SetPiece, spId);
 				LoadMapObjects("levels\\l4data\\warlord.dun", SetPiece.position.megaToWorld());
 			}
-			if (Quests[Q_BETRAYER].IsAvailable() && !gbIsMultiplayer)
+			if (Quests[Q_BETRAYER].IsAvailable() && !UseMultiplayerQuests())
 				AddLazStand();
 			InitRndBarrels();
 			AddL4Goodies();
@@ -4412,7 +4451,7 @@ void OperateObject(Player &player, Object &object)
 			OperateStoryBook(object);
 		break;
 	case OBJ_PEDESTAL:
-		OperatePedestal(player, object);
+		OperatePedestal(player, object, sendmsg);
 		break;
 	case OBJ_WARWEAP:
 	case OBJ_WEAPONRACK:
@@ -4429,7 +4468,7 @@ void OperateObject(Player &player, Object &object)
 		OperateSlainHero(player, object);
 		break;
 	case OBJ_SIGNCHEST:
-		OperateInnSignChest(player, object);
+		OperateInnSignChest(player, object, sendmsg);
 		break;
 	default:
 		break;
@@ -4452,6 +4491,7 @@ void DeltaSyncOpObject(Object &object)
 	case OBJ_LEVER:
 	case OBJ_L5LEVER:
 	case OBJ_SWITCHSKL:
+	case OBJ_BOOK2L:
 		UpdateLeverState(object);
 		break;
 	case OBJ_CHEST1:
@@ -4474,7 +4514,8 @@ void DeltaSyncOpObject(Object &object)
 	case OBJ_BLINDBOOK:
 	case OBJ_BLOODBOOK:
 	case OBJ_STEELTOME:
-		UpdateState(object, object._oVar6);
+		object._oAnimFrame = object._oVar6;
+		SyncQSTLever(object);
 		break;
 	case OBJ_BOOKCASEL:
 	case OBJ_BOOKCASER:
@@ -4490,6 +4531,7 @@ void DeltaSyncOpObject(Object &object)
 	case OBJ_WARARMOR:
 	case OBJ_WARWEAP:
 	case OBJ_WEAPONRACK:
+	case OBJ_LAZSTAND:
 		UpdateState(object, object._oAnimFrame + 1);
 		break;
 	case OBJ_CAULDRON:
@@ -4501,9 +4543,12 @@ void DeltaSyncOpObject(Object &object)
 		}
 		break;
 	case OBJ_SIGNCHEST:
-		if (Quests[Q_LTBANNER]._qvar1 == 2) {
+		if (Quests[Q_LTBANNER]._qvar1 >= 2) {
 			UpdateState(object, object._oAnimFrame + 2);
 		}
+		break;
+	case OBJ_PEDESTAL:
+		UpdatePedestalState(object);
 		break;
 	default:
 		break;
@@ -4588,7 +4633,7 @@ void SyncOpObject(Player &player, int cmd, Object &object)
 			OperateStoryBook(object);
 		break;
 	case OBJ_PEDESTAL:
-		OperatePedestal(player, object);
+		OperatePedestal(player, object, sendmsg);
 		break;
 	case OBJ_WARWEAP:
 	case OBJ_WEAPONRACK:
@@ -4601,39 +4646,44 @@ void SyncOpObject(Player &player, int cmd, Object &object)
 		OperateSlainHero(player, object);
 		break;
 	case OBJ_SIGNCHEST:
-		OperateInnSignChest(player, object);
+		OperateInnSignChest(player, object, sendmsg);
 		break;
 	default:
 		break;
 	}
 }
 
-void BreakObjectMissile(Object &object)
+void BreakObjectMissile(const Player *player, Object &object)
 {
 	if (object.IsCrux())
-		BreakCrux(object);
+		BreakCrux(player, object);
 }
 void BreakObject(const Player &player, Object &object)
 {
 	if (object.IsBarrel()) {
 		BreakBarrel(player, object, false, true);
 	} else if (object.IsCrux()) {
-		BreakCrux(object);
+		BreakCrux(&player, object);
 	}
 }
 
 void DeltaSyncBreakObj(Object &object)
 {
-	if (!object.IsBarrel() || object._oSelFlag == 0)
+	if (!object.IsBreakable() || object._oSelFlag == 0)
 		return;
 
-	object._oSolidFlag = false;
 	object._oMissFlag = true;
 	object._oBreak = -1;
 	object._oSelFlag = 0;
 	object._oPreFlag = true;
 	object._oAnimFlag = false;
 	object._oAnimFrame = object._oAnimLen;
+
+	if (object.IsBarrel()) {
+		object._oSolidFlag = false;
+	} else if (object.IsCrux() && AreAllCruxesOfTypeBroken(object._oVar8)) {
+		ObjChangeMap(object._oVar1, object._oVar2, object._oVar3, object._oVar4);
+	}
 }
 
 void SyncBreakObj(const Player &player, Object &object)
@@ -4691,7 +4741,7 @@ void SyncObjectAnim(Object &object)
 		SyncQSTLever(object);
 		break;
 	case OBJ_PEDESTAL:
-		SyncPedestal(object, SetPiece.position, SetPiece.size.width);
+		SyncPedestal(object);
 		break;
 	default:
 		break;

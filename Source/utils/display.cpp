@@ -254,6 +254,9 @@ bool SpawnWindow(const char *lpWindowName)
 	}
 #endif
 
+#if SDL_VERSION_ATLEAST(2, 0, 4)
+	SDL_SetHint(SDL_HINT_IME_INTERNAL_EDITING, "1");
+#endif
 #if SDL_VERSION_ATLEAST(2, 0, 6) && defined(__vita__)
 	SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS, "0");
 #endif
@@ -287,9 +290,6 @@ bool SpawnWindow(const char *lpWindowName)
 	}
 #endif
 
-#ifdef USE_SDL1
-	SDL_EnableUNICODE(1);
-#endif
 #ifdef USE_SDL1
 	// On SDL 1, there are no ADDED/REMOVED events.
 	// Always try to initialize the first joystick.
@@ -497,6 +497,8 @@ SDL_Surface *GetOutputSurface()
 bool OutputRequiresScaling()
 {
 #ifdef USE_SDL1
+	if (HeadlessMode)
+		return false;
 	return gnScreenWidth != GetOutputSurface()->w || gnScreenHeight != GetOutputSurface()->h;
 #else // SDL2, scaling handled by renderer.
 	return false;

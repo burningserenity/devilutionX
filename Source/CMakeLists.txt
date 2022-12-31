@@ -106,6 +106,7 @@ set(libdevilutionx_SRCS
   engine/palette.cpp
   engine/path.cpp
   engine/random.cpp
+  engine/sound_position.cpp
   engine/surface.cpp
   engine/trn.cpp
 
@@ -160,7 +161,6 @@ set(libdevilutionx_SRCS
   utils/language.cpp
   utils/logged_fstream.cpp
   utils/paths.cpp
-  utils/pcx.cpp
   utils/pcx_to_clx.cpp
   utils/sdl_bilinear_scale.cpp
   utils/sdl_thread.cpp
@@ -249,7 +249,6 @@ endif()
 target_link_libraries(libdevilutionx PUBLIC
   Threads::Threads
   DevilutionX::SDL
-  DevilutionX::SDL_image
   fmt::fmt
   PKWare
   libmpq
@@ -258,6 +257,10 @@ target_link_libraries(libdevilutionx PUBLIC
   tl
   hoehrmann_utf8
 )
+
+if(NOT USE_SDL1)
+  target_link_libraries(libdevilutionx PUBLIC SDL2::SDL2_image)
+endif()
 
 if(NOT NONET)
   if(NOT DISABLE_TCP)

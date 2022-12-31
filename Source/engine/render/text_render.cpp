@@ -143,9 +143,14 @@ void GetFontPath(GameFontTables size, uint16_t row, string_view ext, char *out)
 	*fmt::format_to(out, FMT_COMPILE(R"(fonts\{}-{:02x}.{})"), FontSizes[size], row, ext) = '\0';
 }
 
+uint32_t GetFontId(GameFontTables size, uint16_t row)
+{
+	return (size << 16) | row;
+}
+
 std::array<uint8_t, 256> *LoadFontKerning(GameFontTables size, uint16_t row)
 {
-	uint32_t fontId = (size << 16) | row;
+	uint32_t fontId = GetFontId(size, row);
 
 	auto hotKerning = FontKerns.find(fontId);
 	if (hotKerning != FontKerns.end()) {
@@ -162,22 +167,14 @@ std::array<uint8_t, 256> *LoadFontKerning(GameFontTables size, uint16_t row)
 	} else if (IsHangul(row)) {
 		kerning->fill(HangulWidth[size]);
 	} else {
-		SDL_RWops *handle = OpenAsset(path);
-		if (handle != nullptr) {
-			SDL_RWread(handle, kerning, 256, 1);
-			SDL_RWclose(handle);
-		} else {
+		AssetHandle handle = OpenAsset(path);
+		if (!handle.ok() || !handle.read(kerning, 256)) {
 			LogError("Missing font kerning: {}", path);
 			kerning->fill(CJKWidth[size]);
 		}
 	}
 
 	return kerning;
-}
-
-uint32_t GetFontId(GameFontTables size, uint16_t row)
-{
-	return (size << 16) | row;
 }
 
 const OwnedClxSpriteList *LoadFont(GameFontTables size, text_color color, uint16_t row)
@@ -357,7 +354,34 @@ int GetLineHeight(string_view fmt, DrawStringFormatArg *args, std::size_t argsLe
 	return LineHeights[fontIndex];
 }
 
-int DoDrawString(const Surface &out, string_view text, Rectangle rect, Point &characterPosition,
+Surface ClipSurface(const Surface &out, Rectangle rect)
+{
+	if (rect.size.height == 0) {
+		return out.subregion(0, 0, std::min(rect.position.x + rect.size.width, out.w()), out.h());
+	}
+	return out.subregion(0, 0,
+	    std::min(rect.position.x + rect.size.width, out.w()),
+	    std::min(rect.position.y + rect.size.height, out.h()));
+}
+
+void MaybeWrap(Point &characterPosition, int characterWidth, int rightMargin, int initialX, int lineHeight)
+{
+	if (characterPosition.x + characterWidth > rightMargin) {
+		characterPosition.x = initialX;
+		characterPosition.y += lineHeight;
+	}
+}
+
+int GetLineStartX(UiFlags flags, const Rectangle &rect, int lineWidth)
+{
+	if (HasAnyOf(flags, UiFlags::AlignCenter))
+		return rect.position.x + (rect.size.width - lineWidth) / 2;
+	if (HasAnyOf(flags, UiFlags::AlignRight))
+		return rect.position.x + rect.size.width - lineWidth;
+	return rect.position.x;
+}
+
+uint32_t DoDrawString(const Surface &out, string_view text, Rectangle rect, Point &characterPosition,
     int spacing, int lineHeight, int lineWidth, int rightMargin, int bottomMargin,
     UiFlags flags, GameFontTables size, text_color color)
 {
@@ -367,10 +391,10 @@ int DoDrawString(const Surface &out, string_view text, Rectangle rect, Point &ch
 
 	char32_t next;
 	string_view remaining = text;
-	while (!remaining.empty() && remaining[0] != '\0') {
-		next = ConsumeFirstUtf8CodePoint(&remaining);
-		if (next == Utf8DecodeError)
-			break;
+	size_t cpLen;
+	for (; !remaining.empty() && remaining[0] != '\0'
+	     && (next = DecodeFirstUtf8CodePoint(remaining, &cpLen)) != Utf8DecodeError;
+	     remaining.remove_prefix(cpLen)) {
 		if (next == ZWSP)
 			continue;
 
@@ -381,24 +405,19 @@ int DoDrawString(const Surface &out, string_view text, Rectangle rect, Point &ch
 			currentUnicodeRow = unicodeRow;
 		}
 
-		uint8_t frame = next & 0xFF;
-		if (next == '\n' || characterPosition.x > rightMargin) {
-			int nextLineY = characterPosition.y + lineHeight;
-			if (nextLineY + lineHeight > bottomMargin)
+		const uint8_t frame = next & 0xFF;
+		if (next == '\n' || characterPosition.x + (*kerning)[frame] > rightMargin) {
+			const int nextLineY = characterPosition.y + lineHeight;
+			if (nextLineY >= bottomMargin)
 				break;
-			characterPosition.x = rect.position.x;
 			characterPosition.y = nextLineY;
 
 			if (HasAnyOf(flags, (UiFlags::AlignCenter | UiFlags::AlignRight))) {
 				lineWidth = (*kerning)[frame];
-				if (!remaining.empty())
-					lineWidth += spacing + GetLineWidth(remaining, size, spacing);
+				if (remaining.size() > cpLen)
+					lineWidth += spacing + GetLineWidth(remaining.substr(cpLen), size, spacing);
 			}
-
-			if (HasAnyOf(flags, UiFlags::AlignCenter))
-				characterPosition.x += (rect.size.width - lineWidth) / 2;
-			else if (HasAnyOf(flags, UiFlags::AlignRight))
-				characterPosition.x += rect.size.width - lineWidth;
+			characterPosition.x = GetLineStartX(flags, rect, lineWidth);
 
 			if (next == '\n')
 				continue;
@@ -407,7 +426,7 @@ int DoDrawString(const Surface &out, string_view text, Rectangle rect, Point &ch
 		DrawFont(out, characterPosition, font, color, frame);
 		characterPosition.x += (*kerning)[frame] + spacing;
 	}
-	return text.data() - remaining.data();
+	return remaining.data() - text.data();
 }
 
 } // namespace
@@ -626,14 +645,11 @@ uint32_t DrawString(const Surface &out, string_view text, const Rectangle &rect,
 	if (HasAnyOf(flags, UiFlags::KerningFitSpacing))
 		spacing = AdjustSpacingToFitHorizontally(lineWidth, maxSpacing, charactersInLine, rect.size.width);
 
-	Point characterPosition = rect.position;
-	if (HasAnyOf(flags, UiFlags::AlignCenter))
-		characterPosition.x += (rect.size.width - lineWidth) / 2;
-	else if (HasAnyOf(flags, UiFlags::AlignRight))
-		characterPosition.x += rect.size.width - lineWidth;
+	Point characterPosition { GetLineStartX(flags, rect, lineWidth), rect.position.y };
+	const int initialX = characterPosition.x;
 
 	const int rightMargin = rect.position.x + rect.size.width;
-	const int bottomMargin = rect.size.height != 0 ? std::min(rect.position.y + rect.size.height, out.h()) : out.h();
+	const int bottomMargin = rect.size.height != 0 ? std::min(rect.position.y + rect.size.height + BaseLineOffset[size], out.h()) : out.h();
 
 	if (lineHeight == -1)
 		lineHeight = GetLineHeight(text, size);
@@ -645,12 +661,17 @@ uint32_t DrawString(const Surface &out, string_view text, const Rectangle &rect,
 
 	characterPosition.y += BaseLineOffset[size];
 
-	const int bytesDrawn = DoDrawString(out, text, rect, characterPosition, spacing, lineHeight, lineWidth, rightMargin, bottomMargin, flags, size, color);
+	const Surface clippedOut = ClipSurface(out, rect);
+
+	const uint32_t bytesDrawn = DoDrawString(clippedOut, text, rect, characterPosition, spacing, lineHeight, lineWidth, rightMargin, bottomMargin, flags, size, color);
 
 	if (HasAnyOf(flags, UiFlags::PentaCursor)) {
-		ClxDraw(out, characterPosition + Displacement { 0, lineHeight - BaseLineOffset[size] }, (*pSPentSpn2Cels)[PentSpn2Spin()]);
+		const ClxSprite sprite = (*pSPentSpn2Cels)[PentSpn2Spin()];
+		MaybeWrap(characterPosition, sprite.width(), rightMargin, initialX, lineHeight);
+		ClxDraw(clippedOut, characterPosition + Displacement { 0, lineHeight - BaseLineOffset[size] }, sprite);
 	} else if (HasAnyOf(flags, UiFlags::TextCursor) && GetAnimationFrame(2, 500) != 0) {
-		DrawFont(out, characterPosition, LoadFont(size, color, 0), color, '|');
+		MaybeWrap(characterPosition, 2, rightMargin, initialX, lineHeight);
+		DrawFont(clippedOut, characterPosition, LoadFont(size, color, 0), color, '|');
 	}
 
 	return bytesDrawn;
@@ -670,14 +691,11 @@ void DrawStringWithColors(const Surface &out, string_view fmt, DrawStringFormatA
 	if (HasAnyOf(flags, UiFlags::KerningFitSpacing))
 		spacing = AdjustSpacingToFitHorizontally(lineWidth, maxSpacing, charactersInLine, rect.size.width);
 
-	Point characterPosition = rect.position;
-	if (HasAnyOf(flags, UiFlags::AlignCenter))
-		characterPosition.x += (rect.size.width - lineWidth) / 2;
-	else if (HasAnyOf(flags, UiFlags::AlignRight))
-		characterPosition.x += rect.size.width - lineWidth;
+	Point characterPosition { GetLineStartX(flags, rect, lineWidth), rect.position.y };
+	const int initialX = characterPosition.x;
 
 	const int rightMargin = rect.position.x + rect.size.width;
-	const int bottomMargin = rect.size.height != 0 ? std::min(rect.position.y + rect.size.height, out.h()) : out.h();
+	const int bottomMargin = rect.size.height != 0 ? std::min(rect.position.y + rect.size.height + BaseLineOffset[size], out.h()) : out.h();
 
 	if (lineHeight == -1)
 		lineHeight = GetLineHeight(fmt, args, argsLen, size);
@@ -689,33 +707,33 @@ void DrawStringWithColors(const Surface &out, string_view fmt, DrawStringFormatA
 
 	characterPosition.y += BaseLineOffset[size];
 
+	const Surface clippedOut = ClipSurface(out, rect);
+
 	Font *font = nullptr;
 	std::array<uint8_t, 256> *kerning = nullptr;
 
 	char32_t prev = U'\0';
 	char32_t next;
 	uint32_t currentUnicodeRow = 0;
-	string_view rest = fmt;
+	string_view remaining = fmt;
 	FmtArgParser fmtArgParser { fmt, args, argsLen };
-	while (!rest.empty() && rest[0] != '\0') {
-		if ((prev == U'{' || prev == U'}') && static_cast<char>(prev) == rest[0]) {
-			rest.remove_prefix(1);
+	size_t cpLen;
+	for (; !remaining.empty() && remaining[0] != '\0'
+	     && (next = DecodeFirstUtf8CodePoint(remaining, &cpLen)) != Utf8DecodeError;
+	     remaining.remove_prefix(cpLen), prev = next) {
+		if (((prev == U'{' || prev == U'}') && prev == next)
+		    || next == ZWSP)
 			continue;
-		}
-		const std::optional<std::size_t> fmtArgPos = fmtArgParser(rest);
-		if (fmtArgPos) {
-			DoDrawString(out, args[*fmtArgPos].GetFormatted(), rect, characterPosition, spacing, lineHeight, lineWidth, rightMargin, bottomMargin, flags, size,
-			    GetColorFromFlags(args[*fmtArgPos].GetFlags()));
-			prev = U'\0';
-			font = nullptr;
-			continue;
-		}
 
-		next = ConsumeFirstUtf8CodePoint(&rest);
-		if (next == Utf8DecodeError)
-			break;
-		if (next == ZWSP) {
-			prev = next;
+		const std::optional<std::size_t> fmtArgPos = fmtArgParser(remaining);
+		if (fmtArgPos) {
+			DoDrawString(clippedOut, args[*fmtArgPos].GetFormatted(), rect, characterPosition, spacing, lineHeight, lineWidth, rightMargin, bottomMargin, flags, size,
+			    GetColorFromFlags(args[*fmtArgPos].GetFlags()));
+			// `fmtArgParser` has already consumed `remaining`. Ensure the loop doesn't consume any more.
+			cpLen = 0;
+			// The loop assigns `prev = next`. We want `prev` to be `\0` after this.
+			next = U'\0';
+			font = nullptr;
 			continue;
 		}
 
@@ -726,39 +744,35 @@ void DrawStringWithColors(const Surface &out, string_view fmt, DrawStringFormatA
 			currentUnicodeRow = unicodeRow;
 		}
 
-		uint8_t frame = next & 0xFF;
-		if (next == '\n' || characterPosition.x > rightMargin) {
-			if (characterPosition.y + lineHeight >= bottomMargin)
+		const uint8_t frame = next & 0xFF;
+		if (next == U'\n' || characterPosition.x + (*kerning)[frame] > rightMargin) {
+			const int nextLineY = characterPosition.y + lineHeight;
+			if (nextLineY >= bottomMargin)
 				break;
-			characterPosition.x = rect.position.x;
-			characterPosition.y += lineHeight;
+			characterPosition.y = nextLineY;
 
 			if (HasAnyOf(flags, (UiFlags::AlignCenter | UiFlags::AlignRight))) {
 				lineWidth = (*kerning)[frame];
-				if (!rest.empty())
-					lineWidth += spacing + GetLineWidth(rest, size, spacing);
+				if (remaining.size() > cpLen)
+					lineWidth += spacing + GetLineWidth(remaining.substr(cpLen), size, spacing);
 			}
+			characterPosition.x = GetLineStartX(flags, rect, lineWidth);
 
-			if (HasAnyOf(flags, UiFlags::AlignCenter))
-				characterPosition.x += (rect.size.width - lineWidth) / 2;
-			else if (HasAnyOf(flags, UiFlags::AlignRight))
-				characterPosition.x += rect.size.width - lineWidth;
-
-			if (next == '\n') {
-				prev = next;
+			if (next == U'\n')
 				continue;
-			}
 		}
 
-		DrawFont(out, characterPosition, font, color, frame);
+		DrawFont(clippedOut, characterPosition, font, color, frame);
 		characterPosition.x += (*kerning)[frame] + spacing;
-		prev = next;
 	}
 
 	if (HasAnyOf(flags, UiFlags::PentaCursor)) {
-		ClxDraw(out, characterPosition + Displacement { 0, lineHeight - BaseLineOffset[size] }, (*pSPentSpn2Cels)[PentSpn2Spin()]);
+		const ClxSprite sprite = (*pSPentSpn2Cels)[PentSpn2Spin()];
+		MaybeWrap(characterPosition, sprite.width(), rightMargin, initialX, lineHeight);
+		ClxDraw(clippedOut, characterPosition + Displacement { 0, lineHeight - BaseLineOffset[size] }, sprite);
 	} else if (HasAnyOf(flags, UiFlags::TextCursor) && GetAnimationFrame(2, 500) != 0) {
-		DrawFont(out, characterPosition, LoadFont(size, color, 0), color, '|');
+		MaybeWrap(characterPosition, 2, rightMargin, initialX, lineHeight);
+		DrawFont(clippedOut, characterPosition, LoadFont(size, color, 0), color, '|');
 	}
 }
 

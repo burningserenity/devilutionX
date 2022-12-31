@@ -21,6 +21,7 @@
 #include "engine/points_in_rectangle_range.hpp"
 #include "engine/random.hpp"
 #include "engine/render/clx_render.hpp"
+#include "engine/sound_position.hpp"
 #include "engine/world_tile.hpp"
 #include "init.h"
 #include "levels/crypt.h"
@@ -481,7 +482,7 @@ void PlaceQuestMonsters()
 			PlaceUniqueMonst(UniqueMonsterType::Butcher, 0, 0);
 		}
 
-		if (currlevel == Quests[Q_SKELKING]._qlevel && gbIsMultiplayer) {
+		if (currlevel == Quests[Q_SKELKING]._qlevel && UseMultiplayerQuests()) {
 			for (size_t i = 0; i < LevelMonsterTypeCount; i++) {
 				if (IsSkel(LevelMonsterTypes[i].type)) {
 					PlaceUniqueMonst(UniqueMonsterType::SkeletonKing, i, 30);
@@ -518,7 +519,7 @@ void PlaceQuestMonsters()
 			Quests[Q_ZHAR]._qactive = QUEST_NOTAVAIL;
 		}
 
-		if (currlevel == Quests[Q_BETRAYER]._qlevel && gbIsMultiplayer) {
+		if (currlevel == Quests[Q_BETRAYER]._qlevel && UseMultiplayerQuests()) {
 			AddMonsterType(UniqueMonsterType::Lazarus, PLACE_UNIQUE);
 			AddMonsterType(UniqueMonsterType::RedVex, PLACE_UNIQUE);
 			PlaceUniqueMonst(UniqueMonsterType::Lazarus, 0, 0);
@@ -608,19 +609,20 @@ bool IsRanged(Monster &monster)
 
 void UpdateEnemy(Monster &monster)
 {
-	Point target;
+	WorldTilePosition target;
 	int menemy = -1;
 	int bestDist = -1;
 	bool bestsameroom = false;
-	const auto &position = monster.position.tile;
-	if ((monster.flags & MFLAG_BERSERK) != 0 || (monster.flags & MFLAG_GOLEM) == 0) {
+	const WorldTilePosition position = monster.position.tile;
+	const bool isPlayerMinion = monster.isPlayerMinion();
+	if (!isPlayerMinion) {
 		for (size_t pnum = 0; pnum < Players.size(); pnum++) {
-			Player &player = Players[pnum];
+			const Player &player = Players[pnum];
 			if (!player.plractive || !player.isOnActiveLevel() || player._pLvlChanging
 			    || (((player._pHitPoints >> 6) == 0) && gbIsMultiplayer))
 				continue;
-			bool sameroom = (dTransVal[position.x][position.y] == dTransVal[player.position.tile.x][player.position.tile.y]);
-			int dist = position.WalkingDistance(player.position.tile);
+			const bool sameroom = (dTransVal[position.x][position.y] == dTransVal[player.position.tile.x][player.position.tile.y]);
+			const int dist = position.WalkingDistance(player.position.tile);
 			if ((sameroom && !bestsameroom)
 			    || ((sameroom || !bestsameroom) && dist < bestDist)
 			    || (menemy == -1)) {
@@ -633,20 +635,20 @@ void UpdateEnemy(Monster &monster)
 		}
 	}
 	for (size_t i = 0; i < ActiveMonsterCount; i++) {
-		int monsterId = ActiveMonsters[i];
-		auto &otherMonster = Monsters[monsterId];
+		const int monsterId = ActiveMonsters[i];
+		Monster &otherMonster = Monsters[monsterId];
 		if (&otherMonster == &monster)
 			continue;
 		if ((otherMonster.hitPoints >> 6) <= 0)
 			continue;
 		if (otherMonster.position.tile == GolemHoldingCell)
 			continue;
-		if (M_Talker(otherMonster) && otherMonster.talkMsg != TEXT_NONE)
+		if (otherMonster.talkMsg != TEXT_NONE && M_Talker(otherMonster))
 			continue;
-		if (monster.isPlayerMinion() && otherMonster.isPlayerMinion()) // prevent golems from fighting each other
+		if (isPlayerMinion && otherMonster.isPlayerMinion()) // prevent golems from fighting each other
 			continue;
 
-		int dist = otherMonster.position.tile.WalkingDistance(position);
+		const int dist = otherMonster.position.tile.WalkingDistance(position);
 		if (((monster.flags & MFLAG_GOLEM) == 0
 		        && (monster.flags & MFLAG_BERSERK) == 0
 		        && dist >= 2
@@ -656,7 +658,7 @@ void UpdateEnemy(Monster &monster)
 		        && (otherMonster.flags & MFLAG_GOLEM) == 0)) {
 			continue;
 		}
-		bool sameroom = dTransVal[position.x][position.y] == dTransVal[otherMonster.position.tile.x][otherMonster.position.tile.y];
+		const bool sameroom = dTransVal[position.x][position.y] == dTransVal[otherMonster.position.tile.x][otherMonster.position.tile.y];
 		if ((sameroom && !bestsameroom)
 		    || ((sameroom || !bestsameroom) && dist < bestDist)
 		    || (menemy == -1)) {
@@ -1119,6 +1121,20 @@ void CheckReflect(Monster &monster, Player &player, int &dam)
 		M_StartHit(monster, player, mdam);
 }
 
+int GetMinHit()
+{
+	switch (currlevel) {
+	case 16:
+		return 30;
+	case 15:
+		return 25;
+	case 14:
+		return 20;
+	default:
+		return 15;
+	}
+}
+
 void MonsterAttackPlayer(Monster &monster, Player &player, int hit, int minDam, int maxDam)
 {
 	if (player._pHitPoints >> 6 <= 0 || player._pInvincible || HasAnyOf(player._pSpellFlags, SpellFlag::Etherealize))
@@ -1139,13 +1155,7 @@ void MonsterAttackPlayer(Monster &monster, Player &player, int hit, int minDam, 
 	hit += 2 * (monster.level(sgGameInitInfo.nDifficulty) - player._pLevel)
 	    + 30
 	    - ac;
-	int minhit = 15;
-	if (currlevel == 14)
-		minhit = 20;
-	if (currlevel == 15)
-		minhit = 25;
-	if (currlevel == 16)
-		minhit = 30;
+	int minhit = GetMinHit();
 	hit = std::max(hit, minhit);
 	int blkper = 100;
 	if ((player._pmode == PM_STAND || player._pmode == PM_ATTACK) && player._pBlockFlag) {
@@ -1426,6 +1436,7 @@ void MonsterTalk(Monster &monster)
 			if (Quests[Q_LTBANNER]._qactive == QUEST_INIT)
 				Quests[Q_LTBANNER]._qactive = QUEST_ACTIVE;
 			monster.flags |= MFLAG_QUEST_COMPLETE;
+			NetSendCmdQuest(true, Quests[Q_LTBANNER]);
 		}
 		if (Quests[Q_LTBANNER]._qvar1 < 2) {
 			app_fatal(StrCat("SS Talk = ", monster.talkMsg, ", Flags = ", monster.flags));
@@ -1443,7 +1454,7 @@ void MonsterTalk(Monster &monster)
 	}
 	if (monster.uniqueType == UniqueMonsterType::WarlordOfBlood)
 		Quests[Q_WARLORD]._qvar1 = 2;
-	if (monster.uniqueType == UniqueMonsterType::Lazarus && gbIsMultiplayer) {
+	if (monster.uniqueType == UniqueMonsterType::Lazarus && UseMultiplayerQuests()) {
 		Quests[Q_BETRAYER]._qvar1 = 6;
 		monster.goal = MonsterGoal::Normal;
 		monster.activeForTicks = UINT8_MAX;
@@ -1676,25 +1687,14 @@ bool RandomWalk2(Monster &monster, Direction md)
  */
 bool IsTileSafe(const Monster &monster, Point position)
 {
-	if (!TileContainsMissile(position)) {
-		return true;
-	}
+	if (!InDungeonBounds(position))
+		return false;
 
-	bool fearsFire = (monster.resistance & IMMUNE_FIRE) == 0 || monster.type().type == MT_DIABLO;
-	bool fearsLightning = (monster.resistance & IMMUNE_LIGHTNING) == 0 || monster.type().type == MT_DIABLO;
+	const bool fearsFire = (monster.resistance & IMMUNE_FIRE) == 0 || monster.type().type == MT_DIABLO;
+	const bool fearsLightning = (monster.resistance & IMMUNE_LIGHTNING) == 0 || monster.type().type == MT_DIABLO;
 
-	for (auto &missile : Missiles) {
-		if (missile.position.tile == position) {
-			if (fearsFire && missile._mitype == MIS_FIREWALL) {
-				return false;
-			}
-			if (fearsLightning && missile._mitype == MIS_LIGHTWALL) {
-				return false;
-			}
-		}
-	}
-
-	return true;
+	return !(fearsFire && HasAnyOf(dFlags[position.x][position.y], DungeonFlag::MissileFireWall))
+	    && !(fearsLightning && HasAnyOf(dFlags[position.x][position.y], DungeonFlag::MissileLightningWall));
 }
 
 /**
@@ -2563,6 +2563,7 @@ void SnotSpilAi(Monster &monster)
 			if (!effect_is_playing(USFX_SNOT3) && monster.goal == MonsterGoal::Talking) {
 				ObjChangeMap(SetPiece.position.x, SetPiece.position.y, SetPiece.position.x + SetPiece.size.width + 1, SetPiece.position.y + SetPiece.size.height + 1);
 				Quests[Q_LTBANNER]._qvar1 = 3;
+				NetSendCmdQuest(true, Quests[Q_LTBANNER]);
 				RedoPlayerVision();
 				monster.activeForTicks = UINT8_MAX;
 				monster.talkMsg = TEXT_NONE;
@@ -2580,7 +2581,7 @@ void SnotSpilAi(Monster &monster)
 
 void SnakeAi(Monster &monster)
 {
-	char pattern[6] = { 1, 1, 0, -1, -1, 0 };
+	int8_t pattern[6] = { 1, 1, 0, -1, -1, 0 };
 	if (monster.mode != MonsterMode::Stand || monster.activeForTicks == 0)
 		return;
 	Direction md = GetDirection(monster.position.tile, monster.position.last);
@@ -2790,12 +2791,16 @@ void LazarusAi(Monster &monster)
 
 	Direction md = GetMonsterDirection(monster);
 	if (IsTileVisible(monster.position.tile)) {
-		if (!gbIsMultiplayer) {
+		if (!UseMultiplayerQuests()) {
 			Player &myPlayer = *MyPlayer;
 			if (monster.talkMsg == TEXT_VILE13 && monster.goal == MonsterGoal::Inquiring && myPlayer.position.tile == Point { 35, 46 }) {
-				PlayInGameMovie("gendata\\fprst3.smk");
+				if (!gbIsMultiplayer) {
+					// Playing ingame movies is currently not supported in multiplayer
+					PlayInGameMovie("gendata\\fprst3.smk");
+				}
 				monster.mode = MonsterMode::Talk;
 				Quests[Q_BETRAYER]._qvar1 = 5;
+				NetSendCmdQuest(true, Quests[Q_BETRAYER]);
 			}
 
 			if (monster.talkMsg == TEXT_VILE13 && !effect_is_playing(USFX_LAZ1) && monster.goal == MonsterGoal::Talking) {
@@ -2805,16 +2810,17 @@ void LazarusAi(Monster &monster)
 				monster.goal = MonsterGoal::Normal;
 				monster.activeForTicks = UINT8_MAX;
 				monster.talkMsg = TEXT_NONE;
+				NetSendCmdQuest(true, Quests[Q_BETRAYER]);
 			}
 		}
 
-		if (gbIsMultiplayer && monster.talkMsg == TEXT_VILE13 && monster.goal == MonsterGoal::Inquiring && Quests[Q_BETRAYER]._qvar1 <= 3) {
+		if (UseMultiplayerQuests() && monster.talkMsg == TEXT_VILE13 && monster.goal == MonsterGoal::Inquiring && Quests[Q_BETRAYER]._qvar1 <= 3) {
 			monster.mode = MonsterMode::Talk;
 		}
 	}
 
 	if (IsAnyOf(monster.goal, MonsterGoal::Normal, MonsterGoal::Retreat, MonsterGoal::Move)) {
-		if (!gbIsMultiplayer && Quests[Q_BETRAYER]._qvar1 == 4 && monster.talkMsg == TEXT_NONE) { // Fix save games affected by teleport bug
+		if (!UseMultiplayerQuests() && Quests[Q_BETRAYER]._qvar1 == 4 && monster.talkMsg == TEXT_NONE) { // Fix save games affected by teleport bug
 			ObjChangeMapResync(1, 18, 20, 24);
 			RedoPlayerVision();
 			Quests[Q_BETRAYER]._qvar1 = 6;
@@ -2834,7 +2840,7 @@ void LazarusMinionAi(Monster &monster)
 	Direction md = GetMonsterDirection(monster);
 
 	if (IsTileVisible(monster.position.tile)) {
-		if (!gbIsMultiplayer) {
+		if (!UseMultiplayerQuests()) {
 			if (Quests[Q_BETRAYER]._qvar1 <= 5) {
 				monster.goal = MonsterGoal::Inquiring;
 			} else {
@@ -3130,7 +3136,7 @@ void PrepareUniqueMonst(Monster &monster, UniqueMonsterType monsterType, size_t 
 	else
 		monster.lightId = AddLight(monster.position.tile, 3);
 
-	if (gbIsMultiplayer) {
+	if (UseMultiplayerQuests()) {
 		if (monster.ai == AI_LAZHELP)
 			monster.talkMsg = TEXT_NONE;
 		if (monster.ai == AI_LAZARUS && Quests[Q_BETRAYER]._qvar1 > 3) {
@@ -3257,7 +3263,7 @@ void GetLevelMTypes()
 		if (Quests[Q_WARLORD].IsAvailable())
 			AddMonsterType(UniqueMonsterType::WarlordOfBlood, PLACE_UNIQUE);
 
-		if (gbIsMultiplayer && currlevel == Quests[Q_SKELKING]._qlevel) {
+		if (UseMultiplayerQuests() && currlevel == Quests[Q_SKELKING]._qlevel) {
 
 			AddMonsterType(MT_SKING, PLACE_UNIQUE);
 
@@ -4392,6 +4398,17 @@ Monster *FindMonsterAtPosition(Point position, bool ignoreMovingMonsters)
 	return &Monsters[abs(monsterId) - 1];
 }
 
+Monster *FindUniqueMonster(UniqueMonsterType monsterType)
+{
+	for (size_t i = 0; i < ActiveMonsterCount; i++) {
+		int monsterId = ActiveMonsters[i];
+		auto &monster = Monsters[monsterId];
+		if (monster.uniqueType == monsterType)
+			return &monster;
+	}
+	return nullptr;
+}
+
 bool IsTileAvailable(const Monster &monster, Point position)
 {
 	if (!IsTileAvailable(position))
@@ -4457,9 +4474,8 @@ Monster *PreSpawnSkeleton()
 	return skeleton;
 }
 
-void TalktoMonster(Monster &monster)
+void TalktoMonster(Player &player, Monster &monster)
 {
-	Player &player = Players[monster.enemy];
 	monster.mode = MonsterMode::Talk;
 	if (monster.ai != AI_SNOTSPIL && monster.ai != AI_LACHDAN) {
 		return;
@@ -4470,6 +4486,7 @@ void TalktoMonster(Monster &monster)
 			Quests[Q_LTBANNER]._qactive = QUEST_DONE;
 			monster.talkMsg = TEXT_BANNER12;
 			monster.goal = MonsterGoal::Inquiring;
+			NetSendCmdQuest(true, Quests[Q_LTBANNER]);
 		}
 	}
 	if (Quests[Q_VEIL].IsAvailable() && monster.talkMsg >= TEXT_VEIL9) {
@@ -4624,8 +4641,7 @@ bool Monster::isResistant(missile_id missileType) const
 
 bool Monster::isPlayerMinion() const
 {
-	// This could be HasAnyOf(GOLEM) && HasNoneOf(BERSERK), I think referencing the type and player index is more robust though
-	return type().type == MT_GOLEM && getId() < Players.size();
+	return (flags & MFLAG_GOLEM) != 0 && (flags & MFLAG_BERSERK) == 0;
 }
 
 bool Monster::isPossibleToHit() const
