@@ -7,6 +7,7 @@
 
 #include "cursor.h"
 #include "engine/backbuffer_state.hpp"
+#include "engine/events.hpp"
 #include "engine/sound.h"
 #include "engine/sound_defs.hpp"
 #include "error.h"
@@ -15,6 +16,7 @@
 #include "loadsave.h"
 #include "options.h"
 #include "pfile.h"
+#include "qol/floatingnumbers.h"
 #include "utils/language.h"
 
 namespace devilution {
@@ -292,6 +294,7 @@ void gamemenu_load_game(bool /*bActivate*/)
 {
 	EventHandler saveProc = SetEventHandler(DisableInputEventHandler);
 	gamemenu_off();
+	ClearFloatingNumbers();
 	NewCursor(CURSOR_NONE);
 	InitDiabloMsg(EMSG_LOADING);
 	RedrawEverything();

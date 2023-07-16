@@ -367,7 +367,8 @@ msgid "Client-Server (TCP)"
 msgstr "Klient-Server (TCP)"
 
 #: Source/DiabloUI/selconn.cpp:15
-msgid "Loopback"
+#, fuzzy
+msgid "Offline" 
 msgstr "Loopback"
 
 #: Source/DiabloUI/selconn.cpp:54 Source/DiabloUI/selgame.cpp:604
@@ -828,11 +829,11 @@ msgstr "Föregående Meny"
 
 #: Source/DiabloUI/support_lines.cpp:8
 msgid ""
-"We maintain a chat server at Discord.gg/YQKCAYQ Follow the links to join our "
+"We maintain a chat server at Discord.gg/devilutionx Follow the links to join our "
 "community where we talk about things related to Diablo, and the Hellfire "
 "expansion."
 msgstr ""
-"Vi håller i en chattserver på Discord.gg/YQKCAYQ Följ länkarna för att gå "
+"Vi håller i en chattserver på Discord.gg/devilutionx Följ länkarna för att gå "
 "med i vår gemenskap där vi pratar som allt som har att göra med Diablo, och "
 "Hellfireexpansionen."
 
@@ -1466,7 +1467,7 @@ msgstr "{} svårighetsgrad"
 msgid "In Menu"
 msgstr "I Menyn"
 
-#: Source/dvlnet/loopback.cpp:113
+#: Source/dvlnet/loopback.cpp:118
 msgid "loopback"
 msgstr "loopback"
 
@@ -3997,12 +3998,8 @@ msgid "Right-click to read"
 msgstr "Högerklicka för att läsa"
 
 #: Source/items.cpp:1814 Source/items.cpp:1835
-msgid "Select from spell book, then"
-msgstr "Välj från magibok, därefter"
-
-#: Source/items.cpp:1815 Source/items.cpp:1836
-msgid "cast spell to read"
-msgstr "använd trollformel för att läsa"
+msgid "Select from spell book, then\ncast spell to read"
+msgstr "Välj från magibok, därefter\nanvänd trollformel för att läsa"
 
 #: Source/items.cpp:1817 Source/items.cpp:1838 Source/items.cpp:1852
 msgid "Open inventory to use"
@@ -4013,12 +4010,8 @@ msgid "Activate to read"
 msgstr "Aktivera för att läsa"
 
 #: Source/items.cpp:1825
-msgid "Right-click to read, then"
-msgstr "Högerklicka för att läsa, därefter"
-
-#: Source/items.cpp:1826
-msgid "left-click to target"
-msgstr "vänsterklicka för att ange mål"
+msgid "Right-click to read, then\nleft-click to target"
+msgstr "Högerklicka för att läsa, därefter\nvänsterklicka för att ange mål"
 
 #: Source/items.cpp:1849
 msgid "Right-click to use"

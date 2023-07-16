@@ -5,6 +5,8 @@
  */
 #include "gmenu.h"
 
+#include <cstdint>
+
 #include "DiabloUI/ui_flags.hpp"
 #include "control.h"
 #include "controls/axis_direction.h"
@@ -14,7 +16,6 @@
 #include "engine/load_cel.hpp"
 #include "engine/render/clx_render.hpp"
 #include "engine/render/text_render.hpp"
-#include "miniwin/misc_msg.h"
 #include "options.h"
 #include "stores.h"
 #include "utils/language.h"

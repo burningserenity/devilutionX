@@ -5,6 +5,8 @@
  */
 #include "automap.h"
 
+#include <cstdint>
+
 #include <fmt/format.h>
 
 #include "control.h"
@@ -18,6 +20,10 @@
 #include "utils/stdcompat/algorithm.hpp"
 #include "utils/ui_fwd.h"
 #include "utils/utf8.hpp"
+
+#ifdef _DEBUG
+#include "debug.h"
+#endif
 
 namespace devilution {
 
@@ -575,7 +581,7 @@ void DrawAutomapTile(const Surface &out, Point center, Point map)
 	}
 }
 
-void SearchAutomapItem(const Surface &out, const Displacement &myPlayerOffset)
+void SearchAutomapItem(const Surface &out, const Displacement &myPlayerOffset, int searchRadius, tl::function_ref<bool(Point position)> highlightTile)
 {
 	const Player &player = *MyPlayer;
 	Point tile = player.position.tile;
@@ -587,15 +593,15 @@ void SearchAutomapItem(const Surface &out, const Displacement &myPlayerOffset)
 			tile.y++;
 	}
 
-	const int startX = clamp(tile.x - 8, 0, MAXDUNX);
-	const int startY = clamp(tile.y - 8, 0, MAXDUNY);
+	const int startX = clamp(tile.x - searchRadius, 0, MAXDUNX);
+	const int startY = clamp(tile.y - searchRadius, 0, MAXDUNY);
 
-	const int endX = clamp(tile.x + 8, 0, MAXDUNX);
-	const int endY = clamp(tile.y + 8, 0, MAXDUNY);
+	const int endX = clamp(tile.x + searchRadius, 0, MAXDUNX);
+	const int endY = clamp(tile.y + searchRadius, 0, MAXDUNY);
 
 	for (int i = startX; i < endX; i++) {
 		for (int j = startY; j < endY; j++) {
-			if (dItem[i][j] == 0)
+			if (!highlightTile({ i, j }))
 				continue;
 
 			int px = i - 2 * AutomapOffset.deltaX - ViewPosition.x;
@@ -635,7 +641,7 @@ void DrawAutomapPlr(const Surface &out, const Displacement &myPlayerOffset, int 
 	int py = tile.y - 2 * AutomapOffset.deltaY - ViewPosition.y;
 
 	Displacement playerOffset = {};
-	if (player.IsWalking())
+	if (player.isWalking())
 		playerOffset = GetOffsetForWalking(player.AnimInfo, player._pdir);
 
 	Point base = {
@@ -713,7 +719,7 @@ void DrawAutomapText(const Surface &out)
 	Point linePosition { 8, 8 };
 
 	if (gbIsMultiplayer) {
-		if (GameName != "0.0.0.0") {
+		if (GameName != "0.0.0.0" && !IsLoopback) {
 			std::string description = std::string(_("Game: "));
 			description.append(GameName);
 			DrawString(out, description, linePosition);
@@ -721,7 +727,9 @@ void DrawAutomapText(const Surface &out)
 		}
 
 		std::string description;
-		if (!PublicGame) {
+		if (IsLoopback) {
+			description = std::string(_("Offline Game"));
+		} else if (!PublicGame) {
 			description = std::string(_("Password: "));
 			description.append(GamePassword);
 		} else {
@@ -887,7 +895,7 @@ void DrawAutomap(const Surface &out)
 
 	const Player &myPlayer = *MyPlayer;
 	Displacement myPlayerOffset = {};
-	if (myPlayer.IsWalking())
+	if (myPlayer.isWalking())
 		myPlayerOffset = GetOffsetForWalking(myPlayer.AnimInfo, myPlayer._pdir, true);
 
 	int d = (AutoMapScale * 64) / 100;
@@ -958,7 +966,11 @@ void DrawAutomap(const Surface &out)
 	}
 
 	if (AutoMapShowItems)
-		SearchAutomapItem(out, myPlayerOffset);
+		SearchAutomapItem(out, myPlayerOffset, 8, [](Point position) { return dItem[position.x][position.y] != 0; });
+#ifdef _DEBUG
+	if (IsDebugAutomapHighlightNeeded())
+		SearchAutomapItem(out, myPlayerOffset, std::max(MAXDUNX, MAXDUNY), ShouldHighlightDebugAutomapTile);
+#endif
 
 	DrawAutomapText(out);
 }

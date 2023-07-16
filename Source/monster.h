@@ -21,6 +21,7 @@
 #include "engine/sound.h"
 #include "engine/world_tile.hpp"
 #include "init.h"
+#include "misdat.h"
 #include "monstdat.h"
 #include "spelldat.h"
 #include "textdat.h"
@@ -39,7 +40,6 @@ enum monster_flag : uint16_t {
 	MFLAG_HIDDEN          = 1 << 0,
 	MFLAG_LOCK_ANIMATION  = 1 << 1,
 	MFLAG_ALLOW_SPECIAL   = 1 << 2,
-	MFLAG_NOHEAL          = 1 << 3,
 	MFLAG_TARGETS_MONSTER = 1 << 4,
 	MFLAG_GOLEM           = 1 << 5,
 	MFLAG_QUEST_COMPLETE  = 1 << 6,
@@ -248,7 +248,7 @@ struct Monster { // note: missing field _mAFNum
 	/** The current target of the monster. An index in to either the player or monster array based on the _meflag value. */
 	uint8_t enemy;
 	bool isInvalid;
-	_mai_id ai;
+	MonsterAIID ai;
 	/**
 	 * @brief Specifies monster's behaviour across various actions.
 	 * Generally, when monster thinks it decides what to do based on this value, among other things.
@@ -419,9 +419,9 @@ struct Monster { // note: missing field _mAFNum
 	/**
 	 * @brief Is the monster currently walking?
 	 */
-	bool isWalking() const;
-	bool isImmune(missile_id mitype) const;
-	bool isResistant(missile_id mitype) const;
+	[[nodiscard]] bool isWalking() const;
+	[[nodiscard]] bool isImmune(MissileID mitype, DamageType missileElement) const;
+	[[nodiscard]] bool isResistant(MissileID mitype, DamageType missileElement) const;
 
 	/**
 	 * Is this a player's golem?
@@ -437,13 +437,21 @@ struct Monster { // note: missing field _mAFNum
 	}
 
 	bool tryLiftGargoyle();
+
+	/**
+	 * @brief Gets the visual/shown monster mode.
+	 *
+	 * When a monster is petrified it's monster mode is changed to MonsterMode::Petrified.
+	 * But for graphics and rendering we show the old/real mode.
+	 */
+	[[nodiscard]] MonsterMode getVisualMonsterMode() const;
 };
 
 extern size_t LevelMonsterTypeCount;
 extern Monster Monsters[MaxMonsters];
 extern int ActiveMonsters[MaxMonsters];
 extern size_t ActiveMonsterCount;
-extern int MonsterKillCounts[MaxMonsters];
+extern int MonsterKillCounts[NUM_MTYPES];
 extern bool sgbSaveSoundOn;
 
 void PrepareUniqueMonst(Monster &monster, UniqueMonsterType monsterType, size_t miniontype, int bosspacksize, const UniqueMonsterData &uniqueMonsterData);
@@ -457,7 +465,7 @@ void InitMonsters();
 void SetMapMonsters(const uint16_t *dunData, Point startPosition);
 Monster *AddMonster(Point position, Direction dir, size_t mtype, bool inMap);
 void AddDoppelganger(Monster &monster);
-void ApplyMonsterDamage(Monster &monster, int damage);
+void ApplyMonsterDamage(DamageType damageType, Monster &monster, int damage);
 bool M_Talker(const Monster &monster);
 void M_StartStand(Monster &monster, Direction md);
 void M_ClearSquares(const Monster &monster);

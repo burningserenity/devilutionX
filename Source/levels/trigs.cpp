@@ -5,6 +5,8 @@
  */
 #include "levels/trigs.h"
 
+#include <cstdint>
+
 #include <fmt/format.h>
 
 #include "control.h"
@@ -168,7 +170,7 @@ void InitL2Triggers()
 	numtrigs = 0;
 	for (WorldTileCoord j = 0; j < MAXDUNY; j++) {
 		for (WorldTileCoord i = 0; i < MAXDUNX; i++) {
-			if (dPiece[i][j] == 266 && (i != Quests[Q_SCHAMB].position.x || j != Quests[Q_SCHAMB].position.y)) {
+			if (dPiece[i][j] == 266 && (!Quests[Q_SCHAMB].IsAvailable() || i != Quests[Q_SCHAMB].position.x || j != Quests[Q_SCHAMB].position.y)) {
 				trigs[numtrigs].position = { i, j };
 				trigs[numtrigs]._tmsg = WM_DIABPREVLVL;
 				numtrigs++;
@@ -881,7 +883,7 @@ void CheckTriggers()
 			StartNewLvl(myPlayer, trigs[i]._tmsg, currlevel - 1);
 			break;
 		case WM_DIABRTNLVL:
-			StartNewLvl(myPlayer, trigs[i]._tmsg, ReturnLevel);
+			StartNewLvl(myPlayer, trigs[i]._tmsg, GetMapReturnLevel());
 			break;
 		case WM_DIABTOWNWARP:
 			if (gbIsMultiplayer) {

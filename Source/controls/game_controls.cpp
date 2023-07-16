@@ -3,7 +3,6 @@
 #include <cstdint>
 
 #include "controls/controller_motion.h"
-#include "miniwin/misc_msg.h"
 #ifndef USE_SDL1
 #include "controls/devices/game_controller.h"
 #endif
@@ -134,7 +133,7 @@ bool GetGameAction(const SDL_Event &event, ControllerButtonEvent ctrlEvent, Game
 					if (ControllerActionHeld == GameActionType_NONE) {
 						ControllerActionHeld = GameActionType_PRIMARY_ACTION;
 					}
-				} else if (sgpCurrentMenu != nullptr || stextflag != STORE_NONE || QuestLogIsOpen) {
+				} else if (sgpCurrentMenu != nullptr || stextflag != TalkID::None || QuestLogIsOpen) {
 					*action = GameActionSendKey { SDLK_RETURN, false };
 				} else {
 					*action = GameActionSendKey { SDLK_SPACE, false };
@@ -171,12 +170,12 @@ bool GetGameAction(const SDL_Event &event, ControllerButtonEvent ctrlEvent, Game
 				return true;
 			}
 			if (VirtualGamepadState.healthButton.isHeld && VirtualGamepadState.healthButton.didStateChange) {
-				if (!QuestLogIsOpen && !sbookflag && stextflag == STORE_NONE)
+				if (!QuestLogIsOpen && !sbookflag && stextflag == TalkID::None)
 					*action = GameAction(GameActionType_USE_HEALTH_POTION);
 				return true;
 			}
 			if (VirtualGamepadState.manaButton.isHeld && VirtualGamepadState.manaButton.didStateChange) {
-				if (!QuestLogIsOpen && !sbookflag && stextflag == STORE_NONE)
+				if (!QuestLogIsOpen && !sbookflag && stextflag == TalkID::None)
 					*action = GameAction(GameActionType_USE_MANA_POTION);
 				return true;
 			}
@@ -196,7 +195,7 @@ bool GetGameAction(const SDL_Event &event, ControllerButtonEvent ctrlEvent, Game
 
 	SDL_Keycode translation = SDLK_UNKNOWN;
 
-	if (gmenu_is_active() || stextflag != STORE_NONE)
+	if (gmenu_is_active() || stextflag != TalkID::None)
 		translation = TranslateControllerButtonToGameMenuKey(ctrlEvent.button);
 	else if (inGameMenu)
 		translation = TranslateControllerButtonToMenuKey(ctrlEvent.button);
@@ -361,7 +360,10 @@ bool HandleControllerButtonEvent(const SDL_Event &event, const ControllerButtonE
 	};
 
 	const ButtonReleaser buttonReleaser { ctrlEvent };
-	bool isGamepadMotion = ProcessControllerMotion(event, ctrlEvent);
+	bool isGamepadMotion = IsControllerMotion(event);
+	if (!isGamepadMotion) {
+		SimulateRightStickWithPadmapper(ctrlEvent);
+	}
 	DetectInputMethod(event, ctrlEvent);
 	if (isGamepadMotion) {
 		return true;
@@ -373,14 +375,17 @@ bool HandleControllerButtonEvent(const SDL_Event &event, const ControllerButtonE
 		SuppressedButton = ControllerButton_NONE;
 	}
 
-	if (GetGameAction(event, ctrlEvent, &action)) {
+	if (ctrlEvent.up && sgOptions.Padmapper.ActionNameTriggeredByButtonEvent(ctrlEvent) != "") {
+		// Button press may have brought up a menu;
+		// don't confuse release of that button with intent to interact with the menu
+		sgOptions.Padmapper.ButtonReleased(ctrlEvent.button);
+		return true;
+	} else if (GetGameAction(event, ctrlEvent, &action)) {
 		ProcessGameAction(action);
 		return true;
 	} else if (ctrlEvent.button != ControllerButton_NONE) {
 		if (!ctrlEvent.up)
 			PressControllerButton(ctrlEvent.button);
-		else
-			sgOptions.Padmapper.ButtonReleased(ctrlEvent.button);
 		return true;
 	}
 

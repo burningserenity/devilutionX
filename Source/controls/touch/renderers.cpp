@@ -5,12 +5,14 @@
 #include "diablo.h"
 #include "doom.h"
 #include "engine.h"
+#include "engine/events.hpp"
 #include "engine/render/clx_render.hpp"
 #include "init.h"
 #include "inv.h"
 #include "levels/gendung.h"
 #include "minitext.h"
 #include "panels/ui_panels.hpp"
+#include "qol/stash.h"
 #include "stores.h"
 #include "towners.h"
 #include "utils/sdl_compat.h"
@@ -114,6 +116,7 @@ void LoadPotionArt(ButtonTexture *potionArt, SDL_Renderer *renderer)
 		ICURS_POTION_OF_FULL_HEALING,
 		ICURS_POTION_OF_FULL_MANA,
 		ICURS_POTION_OF_FULL_REJUVENATION,
+		ICURS_ARENA_POTION,
 		ICURS_SCROLL_OF
 	};
 
@@ -128,7 +131,7 @@ void LoadPotionArt(ButtonTexture *potionArt, SDL_Renderer *renderer)
 	    SDL_PIXELFORMAT_INDEX8);
 
 	auto palette = SDLWrap::AllocPalette();
-	if (SDLC_SetSurfaceAndPaletteColors(surface.get(), palette.get(), orig_palette, 0, 256) < 0)
+	if (SDLC_SetSurfaceAndPaletteColors(surface.get(), palette.get(), orig_palette.data(), 0, 256) < 0)
 		ErrSdl();
 
 	Uint32 bgColor = SDL_MapRGB(surface->format, orig_palette[1].r, orig_palette[1].g, orig_palette[1].b);
@@ -374,7 +377,7 @@ void PotionButtonRenderer::RenderPotion(RenderFunction renderFunction, const But
 
 std::optional<VirtualGamepadPotionType> PotionButtonRenderer::GetPotionType()
 {
-	for (const Item &item : MyPlayer->SpdList) {
+	for (const Item &item : InspectPlayer->SpdList) {
 		if (item.isEmpty()) {
 			continue;
 		}
@@ -384,7 +387,7 @@ std::optional<VirtualGamepadPotionType> PotionButtonRenderer::GetPotionType()
 				return GAMEPAD_HEALING;
 			if (item._iMiscId == IMISC_FULLHEAL)
 				return GAMEPAD_FULL_HEALING;
-			if (item.isScrollOf(SPL_HEAL))
+			if (item.isScrollOf(SpellID::Healing))
 				return GAMEPAD_SCROLL_OF_HEALING;
 		}
 
@@ -399,6 +402,8 @@ std::optional<VirtualGamepadPotionType> PotionButtonRenderer::GetPotionType()
 			return GAMEPAD_REJUVENATION;
 		if (item._iMiscId == IMISC_FULLREJUV)
 			return GAMEPAD_FULL_REJUVENATION;
+		if (item._iMiscId == IMISC_ARENAPOT && MyPlayer->isOnArenaLevel())
+			return GAMEPAD_ARENA_POTION;
 	}
 
 	return std::nullopt;
@@ -425,7 +430,7 @@ VirtualGamepadButtonType PrimaryActionButtonRenderer::GetButtonType()
 
 VirtualGamepadButtonType PrimaryActionButtonRenderer::GetTownButtonType()
 {
-	if (stextflag != STORE_NONE || pcursmonst != -1)
+	if (stextflag != TalkID::None || pcursmonst != -1)
 		return GetTalkButtonType(virtualPadButton->isHeld);
 	return GetBlankButtonType(virtualPadButton->isHeld);
 }
@@ -442,7 +447,7 @@ VirtualGamepadButtonType PrimaryActionButtonRenderer::GetDungeonButtonType()
 
 VirtualGamepadButtonType PrimaryActionButtonRenderer::GetInventoryButtonType()
 {
-	if (pcursinvitem != -1 || pcursstashitem != uint16_t(-1) || pcurs > CURSOR_HAND)
+	if (pcursinvitem != -1 || pcursstashitem != StashStruct::EmptyCell || pcurs > CURSOR_HAND)
 		return GetItemButtonType(virtualPadButton->isHeld);
 	return GetBlankButtonType(virtualPadButton->isHeld);
 }

@@ -13,7 +13,6 @@ set(libdevilutionx_SRCS
   debug.cpp
   diablo.cpp
   doom.cpp
-  encrypt.cpp
   engine.cpp
   error.cpp
   gamemenu.cpp
@@ -43,6 +42,7 @@ set(libdevilutionx_SRCS
   pack.cpp
   pfile.cpp
   player.cpp
+  playerdat.cpp
   plrmsg.cpp
   portal.cpp
   quests.cpp
@@ -73,12 +73,12 @@ set(libdevilutionx_SRCS
   DiabloUI/credits_lines.cpp
   DiabloUI/diabloui.cpp
   DiabloUI/dialogs.cpp
+  DiabloUI/hero/selhero.cpp
   DiabloUI/mainmenu.cpp
+  DiabloUI/multi/selconn.cpp
+  DiabloUI/multi/selgame.cpp
   DiabloUI/progress.cpp
   DiabloUI/scrollbar.cpp
-  DiabloUI/selconn.cpp
-  DiabloUI/selgame.cpp
-  DiabloUI/selhero.cpp
   DiabloUI/selok.cpp
   DiabloUI/selstart.cpp
   DiabloUI/selyesno.cpp
@@ -99,6 +99,7 @@ set(libdevilutionx_SRCS
   engine/backbuffer_state.cpp
   engine/direction.cpp
   engine/dx.cpp
+  engine/events.cpp
   engine/load_cel.cpp
   engine/load_cl2.cpp
   engine/load_clx.cpp
@@ -127,12 +128,6 @@ set(libdevilutionx_SRCS
   levels/town.cpp
   levels/trigs.cpp
 
-  miniwin/misc_msg.cpp
-
-  mpq/mpq_reader.cpp
-  mpq/mpq_sdl_rwops.cpp
-  mpq/mpq_writer.cpp
-
   panels/charpanel.cpp
   panels/info_box.cpp
   panels/mainpanel.cpp
@@ -144,6 +139,7 @@ set(libdevilutionx_SRCS
 
   qol/autopickup.cpp
   qol/chatlog.cpp
+  qol/floatingnumbers.cpp
   qol/itemlabels.cpp
   qol/monhealthbar.cpp
   qol/stash.cpp
@@ -165,8 +161,22 @@ set(libdevilutionx_SRCS
   utils/sdl_bilinear_scale.cpp
   utils/sdl_thread.cpp
   utils/str_cat.cpp
+  utils/str_case.cpp
   utils/surface_to_clx.cpp
   utils/utf8.cpp)
+
+if(SUPPORTS_MPQ)
+  list(APPEND libdevilutionx_DEPS libmpq)
+  list(APPEND libdevilutionx_SRCS
+    mpq/mpq_reader.cpp
+    mpq/mpq_sdl_rwops.cpp
+    mpq/mpq_writer.cpp)
+endif()
+
+if(SUPPORTS_MPQ OR NOT NONET)
+  list(APPEND libdevilutionx_DEPS PKWare)
+  list(APPEND libdevilutionx_SRCS encrypt.cpp)
+endif()
 
 if(IOS)
   list(APPEND libdevilutionx_SRCS platform/ios/ios_paths.m)
@@ -250,12 +260,11 @@ target_link_libraries(libdevilutionx PUBLIC
   Threads::Threads
   DevilutionX::SDL
   fmt::fmt
-  PKWare
-  libmpq
   libsmackerdec
   simpleini::simpleini
   tl
   hoehrmann_utf8
+  ${libdevilutionx_DEPS}
 )
 
 if(NOT USE_SDL1)
@@ -288,3 +297,17 @@ foreach(path ${DEVILUTIONX_PLATFORM_SUBDIRECTORIES})
 endforeach()
 
 target_link_libraries(libdevilutionx PUBLIC ${DEVILUTIONX_PLATFORM_LINK_LIBRARIES})
+
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU")
+  if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS 9 AND NOT AMIGA)
+    target_link_libraries(libdevilutionx PUBLIC stdc++fs)
+  endif()
+elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  # Assumes libc++ (clang) is used rather than libstdc++ (gcc).
+  # This is not always true but these are ancient clang versions anyway.
+  if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS 7)
+    target_link_libraries(libdevilutionx PUBLIC c++experimental)
+  elseif(CMAKE_CXX_COMPILER_VERSION VERSION_LESS 9)
+    target_link_libraries(libdevilutionx PUBLIC c++fs)
+  endif()
+endif()

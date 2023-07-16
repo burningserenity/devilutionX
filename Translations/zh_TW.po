@@ -370,7 +370,8 @@ msgid "Client-Server (TCP)"
 msgstr "客​戶端伺服器​（​TCP​）"
 
 #: Source/DiabloUI/selconn.cpp:15
-msgid "Loopback"
+#, fuzzy
+msgid "Offline" 
 msgstr "環​回"
 
 #: Source/DiabloUI/selconn.cpp:54 Source/DiabloUI/selgame.cpp:604
@@ -856,7 +857,7 @@ msgstr "上​一​個​菜單"
 
 #: Source/DiabloUI/support_lines.cpp:8
 msgid ""
-"We maintain a chat server at Discord.gg/YQKCAYQ Follow the links to join our "
+"We maintain a chat server at Discord.gg/devilutionx Follow the links to join our "
 "community where we talk about things related to Diablo, and the Hellfire "
 "expansion."
 msgstr ""
@@ -1549,7 +1550,7 @@ msgstr "選​擇​難度"
 msgid "In Menu"
 msgstr "主​菜單"
 
-#: Source/dvlnet/loopback.cpp:113
+#: Source/dvlnet/loopback.cpp:118
 msgid "loopback"
 msgstr "環​回"
 
@@ -4083,14 +4084,8 @@ msgid "Right-click to read"
 msgstr "右​擊閱讀"
 
 #: Source/items.cpp:1814 Source/items.cpp:1835
-#, fuzzy
-#| msgid "Select current spell button"
-msgid "Select from spell book, then"
-msgstr "選​擇​目前​法術​按​鈕"
-
-#: Source/items.cpp:1815 Source/items.cpp:1836
-msgid "cast spell to read"
-msgstr ""
+msgid "Select from spell book, then\ncast spell to read"
+msgstr "從拼寫書中選擇​, 然後\n施放拼寫來閱讀"
 
 #: Source/items.cpp:1817 Source/items.cpp:1838 Source/items.cpp:1852
 msgid "Open inventory to use"
@@ -4101,12 +4096,8 @@ msgid "Activate to read"
 msgstr ""
 
 #: Source/items.cpp:1825
-msgid "Right-click to read, then"
-msgstr "右​擊​閱讀，然​後"
-
-#: Source/items.cpp:1826
-msgid "left-click to target"
-msgstr "左​擊目標"
+msgid "Right-click to read, then\nleft-click to target"
+msgstr "右​擊​閱讀, 然​後\n左​擊目標"
 
 #: Source/items.cpp:1849
 msgid "Right-click to use"

@@ -34,7 +34,6 @@ constexpr ItemSpecialEffect Harmony = ItemSpecialEffect::FastestHitRecovery;
 constexpr ItemSpecialEffect BalanceStability = Balance | Stability;
 constexpr ItemSpecialEffect BalanceHarmony = Balance | Harmony;
 constexpr ItemSpecialEffect StabilityHarmony = Stability | Harmony;
-constexpr ItemSpecialEffect Zen = Balance | Stability | Harmony;
 
 constexpr int Warrior = 6;
 constexpr int Rogue = 7;
@@ -74,10 +73,6 @@ BlockTestCase BlockData[] = {
 	{ 3, Warrior, StabilityHarmony },
 	{ 4, Rogue, StabilityHarmony },
 	{ 5, Sorcerer, StabilityHarmony },
-
-	{ 2, Warrior, Zen },
-	{ 3, Rogue, Zen },
-	{ 4, Sorcerer, Zen },
 };
 
 TEST(Player, PM_DoGotHit)
@@ -91,7 +86,7 @@ TEST(Player, PM_DoGotHit)
 
 static void AssertPlayer(Player &player)
 {
-	ASSERT_EQ(Count8(player._pSplLvl, 64), 0);
+	ASSERT_EQ(CountU8(player._pSplLvl, 64), 0);
 	ASSERT_EQ(Count8(player.InvGrid, InventoryGridCells), 1);
 	ASSERT_EQ(CountItems(player.InvBody, NUM_INVLOC), 1);
 	ASSERT_EQ(CountItems(player.InvList, InventoryGridCells), 1);
@@ -131,20 +126,18 @@ static void AssertPlayer(Player &player)
 	ASSERT_EQ(player.pDungMsgs2, 0);
 	ASSERT_EQ(player.pLvlLoad, 0);
 	ASSERT_EQ(player.pDiabloKillLevel, 0);
-	ASSERT_EQ(player.pBattleNet, 0);
 	ASSERT_EQ(player.pManaShield, 0);
-	ASSERT_EQ(player.pDifficulty, 0);
 	ASSERT_EQ(player.pDamAcFlags, ItemSpecialEffectHf::None);
 
 	ASSERT_EQ(player._pmode, 0);
 	ASSERT_EQ(Count8(player.walkpath, MaxPathLength), 0);
-	ASSERT_EQ(player.queuedSpell.spellId, 0);
-	ASSERT_EQ(player.queuedSpell.spellType, 0);
+	ASSERT_EQ(player.queuedSpell.spellId, SpellID::Null);
+	ASSERT_EQ(player.queuedSpell.spellType, SpellType::Skill);
 	ASSERT_EQ(player.queuedSpell.spellFrom, 0);
-	ASSERT_EQ(player._pTSpell, 0);
-	ASSERT_EQ(player._pRSpell, 28);
-	ASSERT_EQ(player._pRSplType, 0);
-	ASSERT_EQ(player._pSBkSpell, 0);
+	ASSERT_EQ(player.inventorySpell, SpellID::Null);
+	ASSERT_EQ(player._pRSpell, SpellID::TrapDisarm);
+	ASSERT_EQ(player._pRSplType, SpellType::Skill);
+	ASSERT_EQ(player._pSBkSpell, SpellID::Null);
 	ASSERT_EQ(player._pAblSpells, 134217728);
 	ASSERT_EQ(player._pScrlSpells, 0);
 	ASSERT_EQ(player._pSpellFlags, SpellFlag::None);
@@ -172,7 +165,6 @@ static void AssertPlayer(Player &player)
 	ASSERT_EQ(player._pIFlags, ItemSpecialEffect::None);
 	ASSERT_EQ(player._pIGetHit, 0);
 	ASSERT_EQ(player._pISplLvlAdd, 0);
-	ASSERT_EQ(player._pISplDur, 0);
 	ASSERT_EQ(player._pIEnAc, 0);
 	ASSERT_EQ(player._pIFMinDam, 0);
 	ASSERT_EQ(player._pIFMaxDam, 0);

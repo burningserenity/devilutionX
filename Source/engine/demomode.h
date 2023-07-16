@@ -5,9 +5,9 @@
  */
 #pragma once
 
-#include <SDL.h>
+#include <cstdint>
 
-#include "miniwin/misc_msg.h"
+#include <SDL.h>
 
 namespace devilution {
 

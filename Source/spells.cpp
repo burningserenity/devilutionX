@@ -32,15 +32,15 @@ namespace {
 bool IsReadiedSpellValid(const Player &player)
 {
 	switch (player._pRSplType) {
-	case RSPLTYPE_SKILL:
-	case RSPLTYPE_SPELL:
-	case RSPLTYPE_INVALID:
+	case SpellType::Skill:
+	case SpellType::Spell:
+	case SpellType::Invalid:
 		return true;
 
-	case RSPLTYPE_CHARGES:
+	case SpellType::Charges:
 		return (player._pISpells & GetSpellBitmask(player._pRSpell)) != 0;
 
-	case RSPLTYPE_SCROLL:
+	case SpellType::Scroll:
 		return (player._pScrlSpells & GetSpellBitmask(player._pRSpell)) != 0;
 
 	default:
@@ -55,81 +55,53 @@ bool IsReadiedSpellValid(const Player &player)
  */
 void ClearReadiedSpell(Player &player)
 {
-	if (player._pRSpell != SPL_INVALID) {
-		player._pRSpell = SPL_INVALID;
+	if (player._pRSpell != SpellID::Invalid) {
+		player._pRSpell = SpellID::Invalid;
 		RedrawEverything();
 	}
 
-	if (player._pRSplType != RSPLTYPE_INVALID) {
-		player._pRSplType = RSPLTYPE_INVALID;
+	if (player._pRSplType != SpellType::Invalid) {
+		player._pRSplType = SpellType::Invalid;
 		RedrawEverything();
-	}
-}
-
-void PlacePlayer(Player &player)
-{
-	if (!player.isOnActiveLevel())
-		return;
-
-	Point newPosition = [&]() {
-		Point okPosition = {};
-
-		for (int i = 0; i < 8; i++) {
-			okPosition = player.position.tile + Displacement { plrxoff2[i], plryoff2[i] };
-			if (PosOkPlayer(player, okPosition))
-				return okPosition;
-		}
-
-		for (int max = 1, min = -1; min > -50; max++, min--) {
-			for (int y = min; y <= max; y++) {
-				okPosition.y = player.position.tile.y + y;
-
-				for (int x = min; x <= max; x++) {
-					okPosition.x = player.position.tile.x + x;
-
-					if (PosOkPlayer(player, okPosition))
-						return okPosition;
-				}
-			}
-		}
-
-		return okPosition;
-	}();
-
-	player.position.tile = newPosition;
-
-	dPlayer[newPosition.x][newPosition.y] = player.getId() + 1;
-
-	if (&player == MyPlayer) {
-		ViewPosition = newPosition;
 	}
 }
 
 } // namespace
 
-bool IsValidSpell(spell_id spl)
+bool IsValidSpell(SpellID spl)
 {
-	return spl > SPL_NULL
-	    && spl <= SPL_LAST
-	    && (spl <= SPL_LASTDIABLO || gbIsHellfire);
+	return spl > SpellID::Null
+	    && spl <= SpellID::LAST
+	    && (spl <= SpellID::LastDiablo || gbIsHellfire);
 }
 
-bool IsWallSpell(spell_id spl)
+bool IsValidSpellFrom(int spellFrom)
 {
-	return spl == SPL_FIREWALL || spl == SPL_LIGHTWALL;
+	if (spellFrom == 0)
+		return true;
+	if (spellFrom >= INVITEM_INV_FIRST && spellFrom <= INVITEM_INV_LAST)
+		return true;
+	if (spellFrom >= INVITEM_BELT_FIRST && spellFrom <= INVITEM_BELT_LAST)
+		return true;
+	return false;
 }
 
-bool TargetsMonster(spell_id id)
+bool IsWallSpell(SpellID spl)
 {
-	return id == SPL_FIREBALL
-	    || id == SPL_FIREWALL
-	    || id == SPL_FLAME
-	    || id == SPL_LIGHTNING
-	    || id == SPL_STONE
-	    || id == SPL_WAVE;
+	return spl == SpellID::FireWall || spl == SpellID::LightningWall;
 }
 
-int GetManaAmount(const Player &player, spell_id sn)
+bool TargetsMonster(SpellID id)
+{
+	return id == SpellID::Fireball
+	    || id == SpellID::FireWall
+	    || id == SpellID::Inferno
+	    || id == SpellID::Lightning
+	    || id == SpellID::StoneCurse
+	    || id == SpellID::FlameWave;
+}
+
+int GetManaAmount(const Player &player, SpellID sn)
 {
 	int ma; // mana amount
 
@@ -140,21 +112,21 @@ int GetManaAmount(const Player &player, spell_id sn)
 	int sl = std::max(player.GetSpellLevel(sn) - 1, 0);
 
 	if (sl > 0) {
-		adj = sl * spelldata[sn].sManaAdj;
+		adj = sl * GetSpellData(sn).sManaAdj;
 	}
-	if (sn == SPL_FIREBOLT) {
+	if (sn == SpellID::Firebolt) {
 		adj /= 2;
 	}
-	if (sn == SPL_RESURRECT && sl > 0) {
-		adj = sl * (spelldata[SPL_RESURRECT].sManaCost / 8);
+	if (sn == SpellID::Resurrect && sl > 0) {
+		adj = sl * (GetSpellData(SpellID::Resurrect).sManaCost / 8);
 	}
 
-	if (sn == SPL_HEAL || sn == SPL_HEALOTHER) {
-		ma = (spelldata[SPL_HEAL].sManaCost + 2 * player._pLevel - adj);
-	} else if (spelldata[sn].sManaCost == 255) {
+	if (sn == SpellID::Healing || sn == SpellID::HealOther) {
+		ma = (GetSpellData(SpellID::Healing).sManaCost + 2 * player._pLevel - adj);
+	} else if (GetSpellData(sn).sManaCost == 255) {
 		ma = (player._pMaxManaBase >> 6) - adj;
 	} else {
-		ma = (spelldata[sn].sManaCost - adj);
+		ma = (GetSpellData(sn).sManaCost - adj);
 	}
 
 	ma = std::max(ma, 0);
@@ -166,26 +138,26 @@ int GetManaAmount(const Player &player, spell_id sn)
 		ma -= ma / 4;
 	}
 
-	if (spelldata[sn].sMinMana > ma >> 6) {
-		ma = spelldata[sn].sMinMana << 6;
+	if (GetSpellData(sn).sMinMana > ma >> 6) {
+		ma = GetSpellData(sn).sMinMana << 6;
 	}
 
 	return ma;
 }
 
-void ConsumeSpell(Player &player, spell_id sn)
+void ConsumeSpell(Player &player, SpellID sn)
 {
 	switch (player.executedSpell.spellType) {
-	case RSPLTYPE_SKILL:
-	case RSPLTYPE_INVALID:
+	case SpellType::Skill:
+	case SpellType::Invalid:
 		break;
-	case RSPLTYPE_SCROLL:
+	case SpellType::Scroll:
 		ConsumeScroll(player);
 		break;
-	case RSPLTYPE_CHARGES:
+	case SpellType::Charges:
 		ConsumeStaffCharge(player);
 		break;
-	case RSPLTYPE_SPELL:
+	case SpellType::Spell:
 #ifdef _DEBUG
 		if (DebugGodMode)
 			break;
@@ -199,11 +171,11 @@ void ConsumeSpell(Player &player, spell_id sn)
 		RedrawComponent(PanelDrawComponent::Mana);
 		break;
 	}
-	if (sn == SPL_FLARE) {
-		ApplyPlrDamage(player, 5);
+	if (sn == SpellID::BloodStar) {
+		ApplyPlrDamage(DamageType::Physical, player, 5);
 	}
-	if (sn == SPL_BONESPIRIT) {
-		ApplyPlrDamage(player, 6);
+	if (sn == SpellID::BoneSpirit) {
+		ApplyPlrDamage(DamageType::Physical, player, 6);
 	}
 }
 
@@ -214,7 +186,7 @@ void EnsureValidReadiedSpell(Player &player)
 	}
 }
 
-SpellCheckResult CheckSpell(const Player &player, spell_id sn, spell_type st, bool manaonly)
+SpellCheckResult CheckSpell(const Player &player, SpellID sn, SpellType st, bool manaonly)
 {
 #ifdef _DEBUG
 	if (DebugGodMode)
@@ -225,7 +197,7 @@ SpellCheckResult CheckSpell(const Player &player, spell_id sn, spell_type st, bo
 		return SpellCheckResult::Fail_Busy;
 	}
 
-	if (st == RSPLTYPE_SKILL) {
+	if (st == SpellType::Skill) {
 		return SpellCheckResult::Success;
 	}
 
@@ -240,7 +212,7 @@ SpellCheckResult CheckSpell(const Player &player, spell_id sn, spell_type st, bo
 	return SpellCheckResult::Success;
 }
 
-void CastSpell(int id, spell_id spl, int sx, int sy, int dx, int dy, int spllvl)
+void CastSpell(int id, SpellID spl, int sx, int sy, int dx, int dy, int spllvl)
 {
 	Player &player = Players[id];
 	Direction dir = player._pdir;
@@ -249,13 +221,14 @@ void CastSpell(int id, spell_id spl, int sx, int sy, int dx, int dy, int spllvl)
 	}
 
 	bool fizzled = false;
-	for (int i = 0; i < 3 && spelldata[spl].sMissiles[i] != MIS_NULL; i++) {
-		Missile *missile = AddMissile({ sx, sy }, { dx, dy }, dir, spelldata[spl].sMissiles[i], TARGET_MONSTERS, id, 0, spllvl);
+	const SpellData &spellData = GetSpellData(spl);
+	for (size_t i = 0; i < sizeof(spellData.sMissiles) / sizeof(spellData.sMissiles[0]) && spellData.sMissiles[i] != MissileID::Null; i++) {
+		Missile *missile = AddMissile({ sx, sy }, { dx, dy }, dir, spellData.sMissiles[i], TARGET_MONSTERS, id, 0, spllvl);
 		fizzled |= (missile == nullptr);
 	}
-	if (spl == SPL_CBOLT) {
+	if (spl == SpellID::ChargedBolt) {
 		for (int i = (spllvl / 2) + 3; i > 0; i--) {
-			Missile *missile = AddMissile({ sx, sy }, { dx, dy }, dir, MIS_CBOLT, TARGET_MONSTERS, id, 0, spllvl);
+			Missile *missile = AddMissile({ sx, sy }, { dx, dy }, dir, MissileID::ChargedBolt, TARGET_MONSTERS, id, 0, spllvl);
 			fizzled |= (missile == nullptr);
 		}
 	}
@@ -270,7 +243,7 @@ void DoResurrect(size_t pnum, Player &target)
 		return;
 	}
 
-	AddMissile(target.position.tile, target.position.tile, Direction::South, MIS_RESURRECTBEAM, TARGET_MONSTERS, pnum, 0, 0);
+	AddMissile(target.position.tile, target.position.tile, Direction::South, MissileID::ResurrectBeam, TARGET_MONSTERS, pnum, 0, 0);
 
 	if (target._pHitPoints != 0)
 		return;
@@ -285,7 +258,7 @@ void DoResurrect(size_t pnum, Player &target)
 	ClrPlrPath(target);
 	target.destAction = ACTION_NONE;
 	target._pInvincible = false;
-	PlacePlayer(target);
+	SyncInitPlrPos(target);
 
 	int hp = 10 << 6;
 	if (target._pMaxHPBase < (10 << 6)) {
@@ -297,12 +270,12 @@ void DoResurrect(size_t pnum, Player &target)
 	target._pMana = 0;
 	target._pManaBase = target._pMana + (target._pMaxManaBase - target._pMaxMana);
 
+	target._pmode = PM_STAND;
+
 	CalcPlrInv(target, true);
 
 	if (target.isOnActiveLevel()) {
 		StartStand(target, target._pdir);
-	} else {
-		target._pmode = PM_STAND;
 	}
 }
 
@@ -316,7 +289,7 @@ void DoHealOther(const Player &caster, Player &target)
 	for (int i = 0; i < caster._pLevel; i++) {
 		hp += (GenerateRnd(4) + 1) << 6;
 	}
-	for (int i = 0; i < caster.GetSpellLevel(SPL_HEALOTHER); i++) {
+	for (int i = 0; i < caster.GetSpellLevel(SpellID::HealOther); i++) {
 		hp += (GenerateRnd(6) + 1) << 6;
 	}
 
@@ -336,16 +309,16 @@ void DoHealOther(const Player &caster, Player &target)
 	}
 }
 
-int GetSpellBookLevel(spell_id s)
+int GetSpellBookLevel(SpellID s)
 {
 	if (gbIsSpawn) {
 		switch (s) {
-		case SPL_STONE:
-		case SPL_GUARDIAN:
-		case SPL_GOLEM:
-		case SPL_ELEMENT:
-		case SPL_FLARE:
-		case SPL_BONESPIRIT:
+		case SpellID::StoneCurse:
+		case SpellID::Guardian:
+		case SpellID::Golem:
+		case SpellID::Elemental:
+		case SpellID::BloodStar:
+		case SpellID::BoneSpirit:
 			return -1;
 		default:
 			break;
@@ -354,40 +327,40 @@ int GetSpellBookLevel(spell_id s)
 
 	if (!gbIsHellfire) {
 		switch (s) {
-		case SPL_NOVA:
-		case SPL_APOCA:
+		case SpellID::Nova:
+		case SpellID::Apocalypse:
 			return -1;
 		default:
-			if (s > SPL_LASTDIABLO)
+			if (s > SpellID::LastDiablo)
 				return -1;
 			break;
 		}
 	}
 
-	return spelldata[s].sBookLvl;
+	return GetSpellData(s).sBookLvl;
 }
 
-int GetSpellStaffLevel(spell_id s)
+int GetSpellStaffLevel(SpellID s)
 {
 	if (gbIsSpawn) {
 		switch (s) {
-		case SPL_STONE:
-		case SPL_GUARDIAN:
-		case SPL_GOLEM:
-		case SPL_APOCA:
-		case SPL_ELEMENT:
-		case SPL_FLARE:
-		case SPL_BONESPIRIT:
+		case SpellID::StoneCurse:
+		case SpellID::Guardian:
+		case SpellID::Golem:
+		case SpellID::Apocalypse:
+		case SpellID::Elemental:
+		case SpellID::BloodStar:
+		case SpellID::BoneSpirit:
 			return -1;
 		default:
 			break;
 		}
 	}
 
-	if (!gbIsHellfire && s > SPL_LASTDIABLO)
+	if (!gbIsHellfire && s > SpellID::LastDiablo)
 		return -1;
 
-	return spelldata[s].sStaffLvl;
+	return GetSpellData(s).sStaffLvl;
 }
 
 } // namespace devilution

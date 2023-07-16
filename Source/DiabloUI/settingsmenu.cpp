@@ -1,5 +1,7 @@
 #include "selstart.h"
 
+#include <cstdint>
+
 #include <function_ref.hpp>
 
 #include "DiabloUI/diabloui.h"
@@ -10,7 +12,6 @@
 #include "controls/remap_keyboard.h"
 #include "engine/render/text_render.hpp"
 #include "hwcursor.hpp"
-#include "miniwin/misc_msg.h"
 #include "options.h"
 #include "utils/language.h"
 #include "utils/stdcompat/optional.hpp"
@@ -28,9 +29,11 @@ bool backToMain = false;
 std::vector<std::unique_ptr<UiListItem>> vecDialogItems;
 std::vector<std::unique_ptr<UiItemBase>> vecDialog;
 std::vector<OptionEntryBase *> vecOptions;
+OptionCategoryBase *selectedCategory = nullptr;
 OptionEntryBase *selectedOption = nullptr;
 
 enum class ShownMenuType : uint8_t {
+	Categories,
 	Settings,
 	ListOption,
 	KeyInput,
@@ -77,7 +80,7 @@ std::vector<DrawStringFormatArg> CreateDrawStringFormatArgForEntry(OptionEntryBa
 /** @brief Check if the option text can't fit in one list line (list width minus drawn selector) */
 bool NeedsTwoLinesToDisplayOption(std::vector<DrawStringFormatArg> &formatArgs)
 {
-	return GetLineWidth("{}: {}", formatArgs.data(), formatArgs.size(), GameFontTables::GameFont24, 1) >= (rectList.size.width - 90);
+	return GetLineWidth("{}: {}", formatArgs.data(), formatArgs.size(), 0, GameFontTables::GameFont24, 1) >= (rectList.size.width - 90);
 }
 
 void CleanUpSettingsUI()
@@ -96,8 +99,17 @@ void CleanUpSettingsUI()
 void GoBackOneMenuLevel()
 {
 	endMenu = true;
-	backToMain = shownMenu == ShownMenuType::Settings;
-	shownMenu = ShownMenuType::Settings;
+	switch (shownMenu) {
+	case ShownMenuType::Categories:
+		backToMain = true;
+		break;
+	case ShownMenuType::Settings:
+		shownMenu = ShownMenuType::Categories;
+		break;
+	default:
+		shownMenu = ShownMenuType::Settings;
+		break;
+	}
 }
 
 void StartPadEntryTimer()
@@ -141,18 +153,34 @@ void UpdateDescription(const OptionEntryBase &option)
 	CopyUtf8(optionDescription, paragraphs, sizeof(optionDescription));
 }
 
+void UpdateDescription(const OptionCategoryBase &category)
+{
+	auto paragraphs = WordWrapString(category.GetDescription(), rectDescription.size.width, GameFont12, 1);
+	CopyUtf8(optionDescription, paragraphs, sizeof(optionDescription));
+}
+
 void ItemFocused(int value)
 {
-	if (shownMenu != ShownMenuType::Settings)
-		return;
-
-	auto &vecItem = vecDialogItems[value];
-	optionDescription[0] = '\0';
-	if (vecItem->m_value < 0 || shownMenu != ShownMenuType::Settings) {
-		return;
+	switch (shownMenu) {
+	case ShownMenuType::Categories: {
+		auto &vecItem = vecDialogItems[value];
+		optionDescription[0] = '\0';
+		if (vecItem->m_value < 0)
+			return;
+		auto *pCategory = sgOptions.GetCategories()[vecItem->m_value];
+		UpdateDescription(*pCategory);
+	} break;
+	case ShownMenuType::Settings: {
+		auto &vecItem = vecDialogItems[value];
+		optionDescription[0] = '\0';
+		if (vecItem->m_value < 0)
+			return;
+		auto *pOption = vecOptions[vecItem->m_value];
+		UpdateDescription(*pOption);
+	} break;
+	default:
+		break;
 	}
-	auto *pOption = vecOptions[vecItem->m_value];
-	UpdateDescription(*pOption);
 }
 
 bool ChangeOptionValue(OptionEntryBase *pOption, size_t listIndex)
@@ -223,6 +251,11 @@ void ItemSelected(int value)
 	}
 
 	switch (shownMenu) {
+	case ShownMenuType::Categories: {
+		selectedCategory = sgOptions.GetCategories()[vecItemValue];
+		endMenu = true;
+		shownMenu = ShownMenuType::Settings;
+	} break;
 	case ShownMenuType::Settings: {
 		auto *pOption = vecOptions[vecItemValue];
 		bool updateValueDescription = false;
@@ -287,7 +320,7 @@ void FullscreenChanged()
 
 	for (auto &vecItem : vecDialogItems) {
 		int vecItemValue = vecItem->m_value;
-		if (vecItemValue < 0)
+		if (vecItemValue < 0 || static_cast<size_t>(vecItemValue) >= vecOptions.size())
 			continue;
 
 		auto *pOption = vecOptions[vecItemValue];
@@ -306,7 +339,8 @@ void FullscreenChanged()
 void UiSettingsMenu()
 {
 	backToMain = false;
-	shownMenu = ShownMenuType::Settings;
+	shownMenu = ShownMenuType::Categories;
+	selectedCategory = nullptr;
 	selectedOption = nullptr;
 
 	do {
@@ -326,40 +360,56 @@ void UiSettingsMenu()
 
 		optionDescription[0] = '\0';
 
-		string_view titleText = shownMenu == ShownMenuType::Settings ? _("Settings") : selectedOption->GetName();
+		string_view titleText;
+		switch (shownMenu) {
+		case ShownMenuType::Categories:
+			titleText = _("Settings");
+			break;
+		case ShownMenuType::Settings:
+			titleText = selectedCategory->GetName();
+			break;
+		default:
+			titleText = selectedOption->GetName();
+			break;
+		}
 		vecDialog.push_back(std::make_unique<UiArtText>(titleText.data(), MakeSdlRect(uiRectangle.position.x, uiRectangle.position.y + 161, uiRectangle.size.width, 35), UiFlags::FontSize30 | UiFlags::ColorUiSilver | UiFlags::AlignCenter, 8));
 		vecDialog.push_back(std::make_unique<UiScrollbar>((*ArtScrollBarBackground)[0], (*ArtScrollBarThumb)[0], *ArtScrollBarArrow, MakeSdlRect(rectList.position.x + rectList.size.width + 5, rectList.position.y, 25, rectList.size.height)));
 		vecDialog.push_back(std::make_unique<UiArtText>(optionDescription, MakeSdlRect(rectDescription), UiFlags::FontSize12 | UiFlags::ColorUiSilverDark | UiFlags::AlignCenter, 1, descriptionLineHeight));
 
-		size_t itemToSelect = 1;
+		size_t itemToSelect = 0;
 		std::optional<tl::function_ref<bool(SDL_Event &)>> eventHandler;
 
 		switch (shownMenu) {
-		case ShownMenuType::Settings: {
+		case ShownMenuType::Categories: {
 			size_t catCount = 0;
+			size_t catIndex = 0;
 			for (auto *pCategory : sgOptions.GetCategories()) {
-				bool categoryCreated = false;
 				for (auto *pEntry : pCategory->GetEntries()) {
 					if (!IsValidEntry(pEntry))
 						continue;
-					if (!categoryCreated) {
-						if (catCount > 0)
-							vecDialogItems.push_back(std::make_unique<UiListItem>("", static_cast<int>(SpecialMenuEntry::None), UiFlags::ElementDisabled));
-						catCount += 1;
-						vecDialogItems.push_back(std::make_unique<UiListItem>(pCategory->GetName(), static_cast<int>(SpecialMenuEntry::None), UiFlags::ColorWhitegold | UiFlags::ElementDisabled));
-						categoryCreated = true;
-					}
-					if (selectedOption == pEntry)
+					if (selectedCategory == pCategory)
 						itemToSelect = vecDialogItems.size();
-					auto formatArgs = CreateDrawStringFormatArgForEntry(pEntry);
-					if (NeedsTwoLinesToDisplayOption(formatArgs)) {
-						vecDialogItems.push_back(std::make_unique<UiListItem>("{}:", formatArgs, vecOptions.size(), UiFlags::ColorUiGold | UiFlags::NeedsNextElement));
-						vecDialogItems.push_back(std::make_unique<UiListItem>(pEntry->GetValueDescription(), vecOptions.size(), UiFlags::ColorUiSilver | UiFlags::ElementDisabled));
-					} else {
-						vecDialogItems.push_back(std::make_unique<UiListItem>("{}: {}", formatArgs, vecOptions.size(), UiFlags::ColorUiGold));
-					}
-					vecOptions.push_back(pEntry);
+					catCount += 1;
+					vecDialogItems.push_back(std::make_unique<UiListItem>(pCategory->GetName(), static_cast<int>(catIndex), UiFlags::ColorUiGold));
+					break;
 				}
+				catIndex++;
+			}
+		} break;
+		case ShownMenuType::Settings: {
+			for (auto *pEntry : selectedCategory->GetEntries()) {
+				if (!IsValidEntry(pEntry))
+					continue;
+				if (selectedOption == pEntry)
+					itemToSelect = vecDialogItems.size();
+				auto formatArgs = CreateDrawStringFormatArgForEntry(pEntry);
+				if (NeedsTwoLinesToDisplayOption(formatArgs)) {
+					vecDialogItems.push_back(std::make_unique<UiListItem>("{}:", formatArgs, vecOptions.size(), UiFlags::ColorUiGold | UiFlags::NeedsNextElement));
+					vecDialogItems.push_back(std::make_unique<UiListItem>(pEntry->GetValueDescription(), vecOptions.size(), UiFlags::ColorUiSilver | UiFlags::ElementDisabled));
+				} else {
+					vecDialogItems.push_back(std::make_unique<UiListItem>("{}: {}", formatArgs, vecOptions.size(), UiFlags::ColorUiGold));
+				}
+				vecOptions.push_back(pEntry);
 			}
 		} break;
 		case ShownMenuType::ListOption: {
@@ -431,7 +481,7 @@ void UiSettingsMenu()
 
 				StaticVector<ControllerButtonEvent, 4> ctrlEvents = ToControllerButtonEvents(event);
 				for (ControllerButtonEvent ctrlEvent : ctrlEvents) {
-					bool isGamepadMotion = ProcessControllerMotion(event, ctrlEvent);
+					bool isGamepadMotion = IsControllerMotion(event);
 					DetectInputMethod(event, ctrlEvent);
 					if (event.type == SDL_KEYUP && event.key.keysym.sym == SDLK_ESCAPE) {
 						StopPadEntryTimer();

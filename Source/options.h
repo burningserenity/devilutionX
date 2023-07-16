@@ -12,7 +12,6 @@
 #include "controls/controller_buttons.h"
 #include "controls/game_controls.h"
 #include "engine/sound_defs.hpp"
-#include "miniwin/misc_msg.h"
 #include "pack.h"
 #include "utils/enum_traits.h"
 #include "utils/stdcompat/optional.hpp"
@@ -60,6 +59,15 @@ enum class Resampler : uint8_t {
 
 string_view ResamplerToString(Resampler resampler);
 std::optional<Resampler> ResamplerFromString(string_view resampler);
+
+enum class FloatingNumbers : uint8_t {
+	/** @brief Show no floating numbers. */
+	Off = 0,
+	/** @brief Show floating numbers at random angles. */
+	Random = 1,
+	/** @brief Show floating numbers vertically only. */
+	Vertical = 2,
+};
 
 enum class OptionEntryType : uint8_t {
 	Boolean,
@@ -317,6 +325,7 @@ public:
 	[[nodiscard]] string_view GetListDescription(size_t index) const override;
 	[[nodiscard]] size_t GetActiveListIndex() const override;
 	void SetActiveListIndex(size_t index) override;
+	void InvalidateList();
 
 	Size operator*() const
 	{
@@ -507,10 +516,6 @@ struct GraphicsOptions : OptionCategoryBase {
 	OptionEntryBoolean limitFPS;
 	/** @brief Show FPS, even without the -f command line flag. */
 	OptionEntryBoolean showFPS;
-	/** @brief Display current/max health values on health globe. */
-	OptionEntryBoolean showHealthValues;
-	/** @brief Display current/max mana values on mana globe. */
-	OptionEntryBoolean showManaValues;
 };
 
 struct GameplayOptions : OptionCategoryBase {
@@ -529,12 +534,20 @@ struct GameplayOptions : OptionCategoryBase {
 	OptionEntryBoolean cowQuest;
 	/** @brief Will players still damage other players in non-PvP mode. */
 	OptionEntryBoolean friendlyFire;
+	/** @brief Enables the full/uncut singleplayer version of quests. */
+	OptionEntryBoolean multiplayerFullQuests;
 	/** @brief Enable the bard hero class. */
 	OptionEntryBoolean testBard;
 	/** @brief Enable the babarian hero class. */
 	OptionEntryBoolean testBarbarian;
 	/** @brief Show the current level progress. */
 	OptionEntryBoolean experienceBar;
+	/** @brief Show item graphics to the left of item descriptions in store menus. */
+	OptionEntryBoolean showItemGraphicsInStores;
+	/** @brief Display current/max health values on health globe. */
+	OptionEntryBoolean showHealthValues;
+	/** @brief Display current/max mana values on mana globe. */
+	OptionEntryBoolean showManaValues;
 	/** @brief Show enemy health at the top of the screen. */
 	OptionEntryBoolean enemyHealthBar;
 	/** @brief Automatically pick up gold when walking over it. */
@@ -585,6 +598,8 @@ struct GameplayOptions : OptionCategoryBase {
 	OptionEntryBoolean hpRegen;
 	/** @brief Regenerate Mana over time, and make spells and mana restoring potions more expensive */
 	OptionEntryBoolean manaRegen;
+	/** @brief Enable floating numbers. */
+	OptionEntryEnum<FloatingNumbers> enableFloatingNumbers;
 };
 
 struct ControllerOptions : OptionCategoryBase {
@@ -683,7 +698,9 @@ struct KeymapperOptions : OptionCategoryBase {
 	    unsigned index = 0);
 	void CommitActions();
 	void KeyPressed(uint32_t key) const;
-	void KeyReleased(uint32_t key) const;
+	void KeyReleased(SDL_Keycode key) const;
+	bool IsTextEntryKey(SDL_Keycode vkey) const;
+	bool IsNumberEntryKey(SDL_Keycode vkey) const;
 	string_view KeyNameForAction(string_view actionName) const;
 	uint32_t KeyForAction(string_view actionName) const;
 
@@ -718,6 +735,7 @@ struct PadmapperOptions : OptionCategoryBase {
 		void SaveToIni(string_view category) const override;
 
 		[[nodiscard]] string_view GetValueDescription() const override;
+		[[nodiscard]] string_view GetValueDescription(bool useShortName) const;
 
 		bool SetValue(ControllerButtonCombo value);
 
@@ -729,11 +747,13 @@ struct PadmapperOptions : OptionCategoryBase {
 		ControllerButtonCombo boundInput {};
 		mutable GamepadLayout boundInputDescriptionType = GamepadLayout::Generic;
 		mutable std::string boundInputDescription;
+		mutable std::string boundInputShortDescription;
 		unsigned dynamicIndex;
 		std::string dynamicKey;
 		mutable std::string dynamicName;
 
 		void UpdateValueDescription() const;
+		string_view Shorten(string_view buttonName) const;
 
 		friend struct PadmapperOptions;
 	};
@@ -750,9 +770,10 @@ struct PadmapperOptions : OptionCategoryBase {
 	void CommitActions();
 	void ButtonPressed(ControllerButton button);
 	void ButtonReleased(ControllerButton button, bool invokeAction = true);
+	void ReleaseAllActiveButtons();
 	bool IsActive(string_view actionName) const;
 	string_view ActionNameTriggeredByButtonEvent(ControllerButtonEvent ctrlEvent) const;
-	string_view InputNameForAction(string_view actionName) const;
+	string_view InputNameForAction(string_view actionName, bool useShortName = false) const;
 	ControllerButtonCombo ButtonComboForAction(string_view actionName) const;
 
 private:
@@ -763,6 +784,7 @@ private:
 	bool committed = false;
 
 	const Action *FindAction(ControllerButton button) const;
+	bool CanDeferToMovementHandler(const Action &action) const;
 };
 
 struct Options {

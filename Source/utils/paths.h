@@ -6,12 +6,6 @@
 
 namespace devilution {
 
-#ifdef _WIN32
-constexpr char DirectorySeparator = '\\';
-#else
-constexpr char DirectorySeparator = '/';
-#endif
-
 namespace paths {
 
 const std::string &BasePath();

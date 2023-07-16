@@ -3,10 +3,14 @@
  *
  * Implementation of routines for initializing the environment, disable screen saver, load MPQ.
  */
-#include <SDL.h>
-#include <config.h>
+#include "init.h"
+
+#include <cstdint>
 #include <string>
 #include <vector>
+
+#include <SDL.h>
+#include <config.h>
 
 #if (defined(_WIN64) || defined(_WIN32)) && !defined(__UWP__) && !defined(NXDK)
 #include <find_steam_game.h>
@@ -16,9 +20,8 @@
 #include "engine/assets.hpp"
 #include "engine/backbuffer_state.hpp"
 #include "engine/dx.h"
+#include "engine/events.hpp"
 #include "hwcursor.hpp"
-#include "miniwin/misc_msg.h"
-#include "mpq/mpq_reader.hpp"
 #include "options.h"
 #include "pfile.h"
 #include "utils/file_util.h"
@@ -29,6 +32,10 @@
 #include "utils/ui_fwd.h"
 #include "utils/utf8.hpp"
 
+#ifndef UNPACKED_MPQS
+#include "mpq/mpq_reader.hpp"
+#endif
+
 #ifdef __vita__
 // increase default allowed heap size on Vita
 int _newlib_heap_size_user = 100 * 1024 * 1024;
@@ -38,8 +45,6 @@ namespace devilution {
 
 /** True if the game is the current active window */
 bool gbActive;
-/** The current input handler function */
-EventHandler CurrentEventHandler;
 /** Indicate if we only have access to demo data */
 bool gbIsSpawn;
 /** Indicate if we have loaded the Hellfire expansion data */
@@ -70,6 +75,8 @@ std::optional<MpqArchive> font_mpq;
 #endif
 
 namespace {
+
+constexpr char ExtraFontsVersion[] = "1\n";
 
 #ifdef UNPACKED_MPQS
 std::optional<std::string> FindUnpackedMpqData(const std::vector<std::string> &paths, string_view mpqName)
@@ -117,6 +124,9 @@ std::vector<std::string> GetMPQSearchPaths()
 	paths.push_back(paths::PrefPath());
 	if (paths[0] == paths[1])
 		paths.pop_back();
+	paths.push_back(paths::ConfigPath());
+	if (paths[0] == paths[1] || (paths.size() == 3 && (paths[0] == paths[2] || paths[1] == paths[2])))
+		paths.pop_back();
 
 #if defined(__unix__) && !defined(__ANDROID__)
 	// `XDG_DATA_HOME` is usually the root path of `paths::PrefPath()`, so we only
@@ -161,7 +171,47 @@ std::vector<std::string> GetMPQSearchPaths()
 	return paths;
 }
 
+bool CheckExtraFontsVersion(AssetRef &&ref)
+{
+	const size_t size = ref.size();
+	AssetHandle handle = OpenAsset(std::move(ref), false);
+	if (!handle.ok())
+		return true;
+
+	std::unique_ptr<char[]> version_contents { new char[size] };
+	if (!handle.read(version_contents.get(), size))
+		return true;
+
+	return string_view { version_contents.get(), size } != ExtraFontsVersion;
+}
+
 } // namespace
+
+#ifdef UNPACKED_MPQS
+bool AreExtraFontsOutOfDate(const std::string &path)
+{
+	const std::string versionPath = path + "fonts" DIRECTORY_SEPARATOR_STR "VERSION";
+	if (versionPath.size() + 1 > AssetRef::PathBufSize)
+		app_fatal("Path too long");
+	AssetRef ref;
+	*BufCopy(ref.path, versionPath) = '\0';
+	return CheckExtraFontsVersion(std::move(ref));
+}
+#else
+bool AreExtraFontsOutOfDate(MpqArchive &archive)
+{
+	const char filename[] = "fonts\\VERSION";
+	const MpqArchive::FileHash fileHash = MpqArchive::CalculateFileHash(filename);
+	uint32_t fileNumber;
+	if (!archive.GetFileNumber(fileHash, fileNumber))
+		return true;
+	AssetRef ref;
+	ref.archive = &archive;
+	ref.fileNumber = fileNumber;
+	ref.filename = filename;
+	return CheckExtraFontsVersion(std::move(ref));
+}
+#endif
 
 void init_cleanup()
 {
@@ -327,13 +377,13 @@ void MainWndProc(const SDL_Event &event)
 		return;
 	switch (event.window.event) {
 	case SDL_WINDOWEVENT_HIDDEN:
+	case SDL_WINDOWEVENT_MINIMIZED:
 		gbActive = false;
 		break;
 	case SDL_WINDOWEVENT_SHOWN:
-		gbActive = false;
-		RedrawEverything();
-		break;
 	case SDL_WINDOWEVENT_EXPOSED:
+	case SDL_WINDOWEVENT_RESTORED:
+		gbActive = true;
 		RedrawEverything();
 		break;
 	case SDL_WINDOWEVENT_SIZE_CHANGED:
@@ -367,13 +417,6 @@ void MainWndProc(const SDL_Event &event)
 			diablo_focus_unpause();
 	}
 #endif
-}
-
-EventHandler SetEventHandler(EventHandler eventHandler)
-{
-	EventHandler previousHandler = CurrentEventHandler;
-	CurrentEventHandler = eventHandler;
-	return previousHandler;
 }
 
 } // namespace devilution

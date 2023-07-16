@@ -1,5 +1,7 @@
 #include "towners.h"
 
+#include <cstdint>
+
 #include "cursor.h"
 #include "engine/clx_sprite.hpp"
 #include "engine/load_cel.hpp"
@@ -9,6 +11,7 @@
 #include "minitext.h"
 #include "stores.h"
 #include "utils/language.h"
+#include "utils/str_case.hpp"
 
 namespace devilution {
 namespace {
@@ -44,7 +47,6 @@ void InitTownerInfo(int i, const TownerData &townerData)
 	towner._ttype = townerData.type;
 	towner.position = townerData.position;
 	towner.talk = townerData.talk;
-	towner.seed = AdvanceRndSeed(); // TODO: Narrowing conversion, tSeed might need to be uint16_t
 
 	dMonster[towner.position.x][towner.position.y] = i + 1;
 
@@ -79,6 +81,7 @@ void InitSmith(Towner &towner, const TownerData &townerData)
 	towner.animOrderSize = sizeof(AnimOrder);
 	LoadTownerAnimations(towner, "towners\\smith\\smithn", 16, 3);
 	towner.name = _("Griswold the Blacksmith");
+	towner.gossip = PickRandomlyAmong({ TEXT_GRISWOLD2, TEXT_GRISWOLD3, TEXT_GRISWOLD4, TEXT_GRISWOLD5, TEXT_GRISWOLD6, TEXT_GRISWOLD7, TEXT_GRISWOLD8, TEXT_GRISWOLD9, TEXT_GRISWOLD10, TEXT_GRISWOLD12, TEXT_GRISWOLD13 });
 }
 
 void InitBarOwner(Towner &towner, const TownerData &townerData)
@@ -101,6 +104,7 @@ void InitBarOwner(Towner &towner, const TownerData &townerData)
 	towner.animOrderSize = sizeof(AnimOrder);
 	LoadTownerAnimations(towner, "towners\\twnf\\twnfn", 16, 3);
 	towner.name = _("Ogden the Tavern owner");
+	towner.gossip = PickRandomlyAmong({ TEXT_OGDEN2, TEXT_OGDEN3, TEXT_OGDEN4, TEXT_OGDEN5, TEXT_OGDEN6, TEXT_OGDEN8, TEXT_OGDEN9, TEXT_OGDEN10 });
 }
 
 void InitTownDead(Towner &towner, const TownerData &townerData)
@@ -132,6 +136,7 @@ void InitWitch(Towner &towner, const TownerData &townerData)
 	towner.animOrderSize = sizeof(AnimOrder);
 	LoadTownerAnimations(towner, "towners\\townwmn1\\witch", 19, 6);
 	towner.name = _("Adria the Witch");
+	towner.gossip = PickRandomlyAmong({ TEXT_ADRIA2, TEXT_ADRIA3, TEXT_ADRIA4, TEXT_ADRIA5, TEXT_ADRIA6, TEXT_ADRIA7, TEXT_ADRIA8, TEXT_ADRIA9, TEXT_ADRIA10, TEXT_ADRIA12, TEXT_ADRIA13 });
 }
 
 void InitBarmaid(Towner &towner, const TownerData &townerData)
@@ -141,6 +146,7 @@ void InitBarmaid(Towner &towner, const TownerData &townerData)
 	towner.animOrderSize = 0;
 	LoadTownerAnimations(towner, "towners\\townwmn1\\wmnn", 18, 6);
 	towner.name = _("Gillian the Barmaid");
+	towner.gossip = PickRandomlyAmong({ TEXT_GILLIAN2, TEXT_GILLIAN3, TEXT_GILLIAN4, TEXT_GILLIAN5, TEXT_GILLIAN6, TEXT_GILLIAN7, TEXT_GILLIAN9, TEXT_GILLIAN10 });
 }
 
 void InitBoy(Towner &towner, const TownerData &townerData)
@@ -150,6 +156,7 @@ void InitBoy(Towner &towner, const TownerData &townerData)
 	towner.animOrderSize = 0;
 	LoadTownerAnimations(towner, "towners\\townboy\\pegkid1", 20, 6);
 	towner.name = _("Wirt the Peg-legged boy");
+	towner.gossip = PickRandomlyAmong({ TEXT_WIRT2, TEXT_WIRT3, TEXT_WIRT4, TEXT_WIRT5, TEXT_WIRT6, TEXT_WIRT7, TEXT_WIRT8, TEXT_WIRT9, TEXT_WIRT11, TEXT_WIRT12 });
 }
 
 void InitHealer(Towner &towner, const TownerData &townerData)
@@ -172,6 +179,7 @@ void InitHealer(Towner &towner, const TownerData &townerData)
 	towner.animOrderSize = sizeof(AnimOrder);
 	LoadTownerAnimations(towner, "towners\\healer\\healer", 20, 6);
 	towner.name = _("Pepin the Healer");
+	towner.gossip = PickRandomlyAmong({ TEXT_PEPIN2, TEXT_PEPIN3, TEXT_PEPIN4, TEXT_PEPIN5, TEXT_PEPIN6, TEXT_PEPIN7, TEXT_PEPIN9, TEXT_PEPIN10, TEXT_PEPIN11 });
 }
 
 void InitTeller(Towner &towner, const TownerData &townerData)
@@ -189,6 +197,7 @@ void InitTeller(Towner &towner, const TownerData &townerData)
 	towner.animOrderSize = sizeof(AnimOrder);
 	LoadTownerAnimations(towner, "towners\\strytell\\strytell", 25, 3);
 	towner.name = _("Cain the Elder");
+	towner.gossip = PickRandomlyAmong({ TEXT_STORY2, TEXT_STORY3, TEXT_STORY4, TEXT_STORY5, TEXT_STORY6, TEXT_STORY7, TEXT_STORY9, TEXT_STORY10, TEXT_STORY11 });
 }
 
 void InitDrunk(Towner &towner, const TownerData &townerData)
@@ -205,6 +214,7 @@ void InitDrunk(Towner &towner, const TownerData &townerData)
 	towner.animOrderSize = sizeof(AnimOrder);
 	LoadTownerAnimations(towner, "towners\\drunk\\twndrunk", 18, 3);
 	towner.name = _("Farnham the Drunk");
+	towner.gossip = PickRandomlyAmong({ TEXT_FARNHAM2, TEXT_FARNHAM3, TEXT_FARNHAM4, TEXT_FARNHAM5, TEXT_FARNHAM6, TEXT_FARNHAM8, TEXT_FARNHAM9, TEXT_FARNHAM10, TEXT_FARNHAM11, TEXT_FARNHAM12, TEXT_FARNHAM13 });
 }
 
 void InitCows(Towner &towner, const TownerData &townerData)
@@ -335,7 +345,7 @@ void TalkToBarOwner(Player &player, Towner &barOwner)
 				bannerQuest._qactive = QUEST_DONE;
 				bannerQuest._qvar1 = 3;
 				NetSendCmdQuest(true, bannerQuest);
-				SpawnUnique(UITEM_HARCREST, barOwner.position + Direction::SouthWest);
+				SpawnUnique(UITEM_HARCREST, barOwner.position + Direction::SouthWest, bannerQuest._qlevel);
 				InitQTextMsg(TEXT_BANNER3);
 				return;
 			}
@@ -343,7 +353,7 @@ void TalkToBarOwner(Player &player, Towner &barOwner)
 	}
 
 	TownerTalk(TEXT_OGDEN1);
-	StartStore(STORE_TAVERN);
+	StartStore(TalkID::Tavern);
 }
 
 void TalkToDeadguy(Player &player, Towner & /*deadguy*/)
@@ -368,7 +378,7 @@ void TalkToDeadguy(Player &player, Towner & /*deadguy*/)
 void TalkToBlackSmith(Player &player, Towner &blackSmith)
 {
 	if (Quests[Q_ROCK]._qactive != QUEST_NOTAVAIL) {
-		if (player._pLvlVisited[4] && Quests[Q_ROCK]._qactive != QUEST_DONE) {
+		if ((player._pLvlVisited[4] || player._pLvlVisited[5]) && Quests[Q_ROCK]._qactive != QUEST_DONE) {
 			if (Quests[Q_ROCK]._qvar2 == 0) {
 				Quests[Q_ROCK]._qvar2 = 1;
 				Quests[Q_ROCK]._qlog = true;
@@ -383,7 +393,7 @@ void TalkToBlackSmith(Player &player, Towner &blackSmith)
 			if (Quests[Q_ROCK]._qvar2 == 1 && RemoveInventoryItemById(player, IDI_ROCK)) {
 				Quests[Q_ROCK]._qactive = QUEST_DONE;
 				NetSendCmdQuest(true, Quests[Q_ROCK]);
-				SpawnUnique(UITEM_INFRARING, blackSmith.position + Direction::SouthWest);
+				SpawnUnique(UITEM_INFRARING, blackSmith.position + Direction::SouthWest, Quests[Q_ROCK]._qlevel);
 				InitQTextMsg(TEXT_INFRA7);
 				return;
 			}
@@ -404,14 +414,14 @@ void TalkToBlackSmith(Player &player, Towner &blackSmith)
 		if (Quests[Q_ANVIL]._qvar2 == 1 && RemoveInventoryItemById(player, IDI_ANVIL)) {
 			Quests[Q_ANVIL]._qactive = QUEST_DONE;
 			NetSendCmdQuest(true, Quests[Q_ANVIL]);
-			SpawnUnique(UITEM_GRISWOLD, blackSmith.position + Direction::SouthWest);
+			SpawnUnique(UITEM_GRISWOLD, blackSmith.position + Direction::SouthWest, Quests[Q_ANVIL]._qlevel);
 			InitQTextMsg(TEXT_ANVIL7);
 			return;
 		}
 	}
 
 	TownerTalk(TEXT_GRISWOLD1);
-	StartStore(STORE_SMITH);
+	StartStore(TalkID::Smith);
 }
 
 void TalkToWitch(Player &player, Towner & /*witch*/)
@@ -421,6 +431,7 @@ void TalkToWitch(Player &player, Towner & /*witch*/)
 			Quests[Q_MUSHROOM]._qactive = QUEST_ACTIVE;
 			Quests[Q_MUSHROOM]._qlog = true;
 			Quests[Q_MUSHROOM]._qvar1 = QS_TOMEGIVEN;
+			NetSendCmdQuest(true, Quests[Q_MUSHROOM]);
 			InitQTextMsg(TEXT_MUSH8);
 			return;
 		}
@@ -431,11 +442,13 @@ void TalkToWitch(Player &player, Towner & /*witch*/)
 					QuestDialogTable[TOWN_HEALER][Q_MUSHROOM] = TEXT_MUSH3;
 					QuestDialogTable[TOWN_WITCH][Q_MUSHROOM] = TEXT_NONE;
 					Quests[Q_MUSHROOM]._qmsg = TEXT_MUSH10;
+					NetSendCmdQuest(true, Quests[Q_MUSHROOM]);
 					InitQTextMsg(TEXT_MUSH10);
 					return;
 				}
 				if (Quests[Q_MUSHROOM]._qmsg != TEXT_MUSH9) {
 					Quests[Q_MUSHROOM]._qmsg = TEXT_MUSH9;
+					NetSendCmdQuest(true, Quests[Q_MUSHROOM]);
 					InitQTextMsg(TEXT_MUSH9);
 					return;
 				}
@@ -443,13 +456,14 @@ void TalkToWitch(Player &player, Towner & /*witch*/)
 			if (Quests[Q_MUSHROOM]._qvar1 >= QS_MUSHGIVEN) {
 				if (HasInventoryItemWithId(player, IDI_BRAIN)) {
 					Quests[Q_MUSHROOM]._qmsg = TEXT_MUSH11;
+					NetSendCmdQuest(true, Quests[Q_MUSHROOM]);
 					InitQTextMsg(TEXT_MUSH11);
 					return;
 				}
 				if (HasInventoryOrBeltItemWithId(player, IDI_SPECELIX)) {
-					InitQTextMsg(TEXT_MUSH12);
 					Quests[Q_MUSHROOM]._qactive = QUEST_DONE;
-					AllItemsList[IDI_SPECELIX].iUsable = true; /// BUGFIX: This will cause the elixir to be usable in the next game
+					NetSendCmdQuest(true, Quests[Q_MUSHROOM]);
+					InitQTextMsg(TEXT_MUSH12);
 					return;
 				}
 			}
@@ -457,7 +471,7 @@ void TalkToWitch(Player &player, Towner & /*witch*/)
 	}
 
 	TownerTalk(TEXT_ADRIA1);
-	StartStore(STORE_WITCH);
+	StartStore(TalkID::Witch);
 }
 
 void TalkToBarmaid(Player &player, Towner & /*barmaid*/)
@@ -466,57 +480,63 @@ void TalkToBarmaid(Player &player, Towner & /*barmaid*/)
 		Quests[Q_GRAVE]._qactive = QUEST_ACTIVE;
 		Quests[Q_GRAVE]._qlog = true;
 		Quests[Q_GRAVE]._qmsg = TEXT_GRAVE8;
+		NetSendCmdQuest(true, Quests[Q_GRAVE]);
 		InitQTextMsg(TEXT_GRAVE8);
 		return;
 	}
 
 	TownerTalk(TEXT_GILLIAN1);
-	StartStore(STORE_BARMAID);
+	StartStore(TalkID::Barmaid);
 }
 
 void TalkToDrunk(Player & /*player*/, Towner & /*drunk*/)
 {
 	TownerTalk(TEXT_FARNHAM1);
-	StartStore(STORE_DRUNK);
+	StartStore(TalkID::Drunk);
 }
 
 void TalkToHealer(Player &player, Towner &healer)
 {
-	if (Quests[Q_PWATER]._qactive != QUEST_NOTAVAIL) {
-		if ((player._pLvlVisited[1] || player._pLvlVisited[5]) && Quests[Q_PWATER]._qactive == QUEST_INIT) {
-			Quests[Q_PWATER]._qactive = QUEST_ACTIVE;
-			Quests[Q_PWATER]._qlog = true;
-			Quests[Q_PWATER]._qmsg = TEXT_POISON3;
+	Quest &poisonWater = Quests[Q_PWATER];
+	if (poisonWater._qactive != QUEST_NOTAVAIL) {
+		if ((poisonWater._qactive == QUEST_INIT && (player._pLvlVisited[1] || player._pLvlVisited[5])) || (poisonWater._qactive == QUEST_ACTIVE && !poisonWater._qlog)) {
+			// Play the dialog and make the quest visible in the log if the player has not started the quest but has
+			// visited the dungeon at least once, or if they've found the poison water cave before speaking to Pepin
+			poisonWater._qactive = QUEST_ACTIVE;
+			poisonWater._qlog = true;
+			poisonWater._qmsg = TEXT_POISON3;
 			InitQTextMsg(TEXT_POISON3);
-			NetSendCmdQuest(true, Quests[Q_PWATER]);
+			NetSendCmdQuest(true, poisonWater);
 			return;
 		}
-		if (Quests[Q_PWATER]._qactive == QUEST_DONE && Quests[Q_PWATER]._qvar1 != 2) {
-			Quests[Q_PWATER]._qvar1 = 2;
+		if (poisonWater._qactive == QUEST_DONE && poisonWater._qvar1 != 2) {
+			poisonWater._qvar1 = 2;
 			InitQTextMsg(TEXT_POISON5);
-			SpawnUnique(UITEM_TRING, healer.position + Direction::SouthWest);
-			NetSendCmdQuest(true, Quests[Q_PWATER]);
+			SpawnUnique(UITEM_TRING, healer.position + Direction::SouthWest, poisonWater._qlevel);
+			NetSendCmdQuest(true, poisonWater);
 			return;
 		}
 	}
-	if (Quests[Q_MUSHROOM]._qactive == QUEST_ACTIVE) {
-		if (Quests[Q_MUSHROOM]._qvar1 >= QS_MUSHGIVEN && Quests[Q_MUSHROOM]._qvar1 < QS_BRAINGIVEN && RemoveInventoryItemById(player, IDI_BRAIN)) {
+	Quest &blackMushroom = Quests[Q_MUSHROOM];
+	if (blackMushroom._qactive == QUEST_ACTIVE) {
+		if (blackMushroom._qvar1 >= QS_MUSHGIVEN && blackMushroom._qvar1 < QS_BRAINGIVEN && RemoveInventoryItemById(player, IDI_BRAIN)) {
 			SpawnQuestItem(IDI_SPECELIX, healer.position + Displacement { 0, 1 }, 0, 0, true);
 			InitQTextMsg(TEXT_MUSH4);
-			Quests[Q_MUSHROOM]._qvar1 = QS_BRAINGIVEN;
+			blackMushroom._qvar1 = QS_BRAINGIVEN;
 			QuestDialogTable[TOWN_HEALER][Q_MUSHROOM] = TEXT_NONE;
+			NetSendCmdQuest(true, blackMushroom);
 			return;
 		}
 	}
 
 	TownerTalk(TEXT_PEPIN1);
-	StartStore(STORE_HEALER);
+	StartStore(TalkID::Healer);
 }
 
 void TalkToBoy(Player & /*player*/, Towner & /*boy*/)
 {
 	TownerTalk(TEXT_WIRT1);
-	StartStore(STORE_BOY);
+	StartStore(TalkID::Boy);
 }
 
 void TalkToStoryteller(Player &player, Towner & /*storyteller*/)
@@ -552,7 +572,7 @@ void TalkToStoryteller(Player &player, Towner & /*storyteller*/)
 	}
 
 	TownerTalk(TEXT_STORY1);
-	StartStore(STORE_STORY);
+	StartStore(TalkID::Storyteller);
 }
 
 void TalkToCow(Player &player, Towner &cow)
@@ -630,7 +650,6 @@ void TalkToFarmer(Player &player, Towner &farmer)
 		InitQTextMsg(TEXT_FARMER4);
 		SpawnRewardItem(IDI_AURIC, farmer.position + Displacement { 1, 0 }, true);
 		quest._qactive = QUEST_HIVE_DONE;
-		quest._qlog = false;
 		if (gbIsMultiplayer)
 			NetSendCmdQuest(true, quest);
 		break;
@@ -652,12 +671,11 @@ void TalkToCowFarmer(Player &player, Towner &cowFarmer)
 	auto &quest = Quests[Q_JERSEY];
 
 	if (RemoveInventoryItemById(player, IDI_BROWNSUIT)) {
-		SpawnUnique(UITEM_BOVINE, cowFarmer.position + Direction::SouthEast);
+		SpawnUnique(UITEM_BOVINE, cowFarmer.position + Direction::SouthEast, quest._qlevel);
 		InitQTextMsg(TEXT_JERSEY8);
 		quest._qactive = QUEST_DONE;
-		auto curFrame = cowFarmer._tAnimFrame;
-		LoadTownerAnimations(cowFarmer, "towners\\farmer\\mfrmrn2", 15, 3);
-		cowFarmer._tAnimFrame = std::min<uint8_t>(curFrame, cowFarmer._tAnimLen - 1);
+		UpdateCowFarmerAnimAfterQuestComplete();
+		NetSendCmdQuest(true, quest);
 		return;
 	}
 
@@ -667,6 +685,7 @@ void TalkToCowFarmer(Player &player, Towner &cowFarmer)
 		quest._qvar1 = 1;
 		quest._qmsg = TEXT_JERSEY4;
 		quest._qlog = true;
+		NetSendCmdQuest(true, quest);
 		return;
 	}
 
@@ -732,12 +751,9 @@ void TalkToGirl(Player &player, Towner &girl)
 
 	if (quest._qactive != QUEST_DONE && RemoveInventoryItemById(player, IDI_THEODORE)) {
 		InitQTextMsg(TEXT_GIRL4);
-		CreateAmulet(girl.position, 13, true, false);
-		quest._qlog = false;
+		CreateAmulet(girl.position, 13, false, false, true);
 		quest._qactive = QUEST_DONE;
-		auto curFrame = girl._tAnimFrame;
-		LoadTownerAnimations(girl, "towners\\girl\\girls1", 20, 6);
-		girl._tAnimFrame = std::min<uint8_t>(curFrame, girl._tAnimLen - 1);
+		UpdateGirlAnimAfterQuestComplete();
 		if (gbIsMultiplayer)
 			NetSendCmdQuest(true, quest);
 		return;
@@ -823,6 +839,15 @@ bool IsTownerPresent(_talker_id npc)
 	}
 }
 
+Towner *GetTowner(_talker_id type)
+{
+	for (Towner &towner : Towners) {
+		if (towner._ttype == type)
+			return &towner;
+	}
+	return nullptr;
+}
+
 void InitTowners()
 {
 	assert(!CowSprites);
@@ -891,11 +916,29 @@ void TalkToTowner(Player &player, int t)
 	towner.talk(player, towner);
 }
 
+void UpdateGirlAnimAfterQuestComplete()
+{
+	Towner *girl = GetTowner(TOWN_GIRL);
+	if (girl == nullptr || !girl->ownedAnim)
+		return; // Girl is not spawned in town yet
+	auto curFrame = girl->_tAnimFrame;
+	LoadTownerAnimations(*girl, "towners\\girl\\girls1", 20, 6);
+	girl->_tAnimFrame = std::min<uint8_t>(curFrame, girl->_tAnimLen - 1);
+}
+
+void UpdateCowFarmerAnimAfterQuestComplete()
+{
+	Towner *cowFarmer = GetTowner(TOWN_COWFARM);
+	auto curFrame = cowFarmer->_tAnimFrame;
+	LoadTownerAnimations(*cowFarmer, "towners\\farmer\\mfrmrn2", 15, 3);
+	cowFarmer->_tAnimFrame = std::min<uint8_t>(curFrame, cowFarmer->_tAnimLen - 1);
+}
+
 #ifdef _DEBUG
 bool DebugTalkToTowner(std::string targetName)
 {
 	SetupTownStores();
-	std::transform(targetName.begin(), targetName.end(), targetName.begin(), [](unsigned char c) { return std::tolower(c); });
+	AsciiStrToLower(targetName);
 	Player &myPlayer = *MyPlayer;
 	for (auto &townerData : TownersData) {
 		if (!IsTownerPresent(townerData.type))
@@ -906,8 +949,7 @@ bool DebugTalkToTowner(std::string targetName)
 		Towner fakeTowner;
 		townerData.init(fakeTowner, townerData);
 		fakeTowner.position = myPlayer.position.tile;
-		std::string npcName(fakeTowner.name);
-		std::transform(npcName.begin(), npcName.end(), npcName.begin(), [](unsigned char c) { return std::tolower(c); });
+		const std::string npcName = AsciiStrToLower(fakeTowner.name);
 		if (npcName.find(targetName) != std::string::npos) {
 			townerData.talk(myPlayer, fakeTowner);
 			return true;

@@ -15,6 +15,10 @@ namespace devilution {
 class MpqWriter {
 public:
 	explicit MpqWriter(const char *path);
+	explicit MpqWriter(const std::string &path)
+	    : MpqWriter(path.c_str())
+	{
+	}
 	MpqWriter(MpqWriter &&other) = default;
 	MpqWriter &operator=(MpqWriter &&other) = default;
 	~MpqWriter();
@@ -63,7 +67,7 @@ private:
 #endif
 
 #ifndef CAN_SEEKP_BEYOND_EOF
-	std::streampos streamBegin_;
+	long streamBegin_;
 #endif
 };
 

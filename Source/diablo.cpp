@@ -4,6 +4,7 @@
  * Implementation of the main game initialization functions.
  */
 #include <array>
+#include <cstdint>
 
 #include <fmt/format.h>
 
@@ -16,7 +17,6 @@
 #include "dead.h"
 #ifdef _DEBUG
 #include "debug.h"
-#include "miniwin/misc_msg.h"
 #endif
 #include "DiabloUI/diabloui.h"
 #include "controls/plrctrls.h"
@@ -29,6 +29,7 @@
 #include "engine/clx_sprite.hpp"
 #include "engine/demomode.h"
 #include "engine/dx.h"
+#include "engine/events.hpp"
 #include "engine/load_cel.hpp"
 #include "engine/load_file.hpp"
 #include "engine/random.hpp"
@@ -64,6 +65,7 @@
 #include "pfile.h"
 #include "plrmsg.h"
 #include "qol/chatlog.h"
+#include "qol/floatingnumbers.h"
 #include "qol/itemlabels.h"
 #include "qol/monhealthbar.h"
 #include "qol/stash.h"
@@ -189,6 +191,7 @@ void FreeGame()
 	FreeDebugGFX();
 #endif
 	FreeGameMem();
+	stream_stop();
 	music_stop();
 }
 
@@ -225,7 +228,7 @@ void LeftMouseCmd(bool bShift)
 
 	if (leveltype == DTYPE_TOWN) {
 		CloseGoldWithdraw();
-		IsStashOpen = false;
+		CloseStash();
 		if (pcursitem != -1 && pcurs == CURSOR_HAND)
 			NetSendCmdLocParam1(true, invflag ? CMD_GOTOGETITEM : CMD_GOTOAGETITEM, cursPosition, pcursitem);
 		if (pcursmonst != -1)
@@ -334,7 +337,7 @@ void LeftMouseDown(uint16_t modState)
 		return;
 	}
 
-	if (stextflag != STORE_NONE) {
+	if (stextflag != TalkID::None) {
 		CheckStoreBtn();
 		return;
 	}
@@ -398,7 +401,7 @@ void LeftMouseUp(uint16_t modState)
 	}
 	if (lvlbtndown)
 		ReleaseLvlBtn();
-	if (stextflag != STORE_NONE)
+	if (stextflag != TalkID::None)
 		ReleaseStoreBtn();
 }
 
@@ -414,7 +417,7 @@ void RightMouseDown(bool isShiftHeld)
 		doom_close();
 		return;
 	}
-	if (stextflag != STORE_NONE)
+	if (stextflag != TalkID::None)
 		return;
 	if (spselflag) {
 		SetSpell();
@@ -424,9 +427,9 @@ void RightMouseDown(bool isShiftHeld)
 		return;
 	if (TryIconCurs())
 		return;
-	if (pcursinvitem != -1 && UseInvItem(MyPlayerId, pcursinvitem))
+	if (pcursinvitem != -1 && UseInvItem(pcursinvitem))
 		return;
-	if (pcursstashitem != uint16_t(-1) && UseStashItem(pcursstashitem))
+	if (pcursstashitem != StashStruct::EmptyCell && UseStashItem(pcursstashitem))
 		return;
 	if (pcurs == CURSOR_HAND) {
 		CheckPlrSpell(isShiftHeld);
@@ -438,7 +441,7 @@ void RightMouseDown(bool isShiftHeld)
 void ReleaseKey(SDL_Keycode vkey)
 {
 	remap_keyboard_key(&vkey);
-	if (sgnTimeoutCurs != CURSOR_NONE || dropGoldFlag)
+	if (sgnTimeoutCurs != CURSOR_NONE)
 		return;
 	sgOptions.Keymapper.KeyReleased(vkey);
 }
@@ -453,7 +456,7 @@ void ClosePanels()
 		}
 	}
 	CloseInventory();
-	chrflag = false;
+	CloseCharPanel();
 	sbookflag = false;
 	QuestLogIsOpen = false;
 }
@@ -555,7 +558,7 @@ void PressKey(SDL_Keycode vkey, uint16_t modState)
 		if ((modState & KMOD_ALT) != 0) {
 			sgOptions.Graphics.fullscreen.SetValue(!IsFullScreen());
 			SaveOptions();
-		} else if (stextflag != STORE_NONE) {
+		} else if (stextflag != TalkID::None) {
 			StoreEnter();
 		} else if (QuestLogIsOpen) {
 			QuestlogEnter();
@@ -564,7 +567,7 @@ void PressKey(SDL_Keycode vkey, uint16_t modState)
 		}
 		return;
 	case SDLK_UP:
-		if (stextflag != STORE_NONE) {
+		if (stextflag != TalkID::None) {
 			StoreUp();
 		} else if (QuestLogIsOpen) {
 			QuestlogUp();
@@ -579,7 +582,7 @@ void PressKey(SDL_Keycode vkey, uint16_t modState)
 		}
 		return;
 	case SDLK_DOWN:
-		if (stextflag != STORE_NONE) {
+		if (stextflag != TalkID::None) {
 			StoreDown();
 		} else if (QuestLogIsOpen) {
 			QuestlogDown();
@@ -594,14 +597,14 @@ void PressKey(SDL_Keycode vkey, uint16_t modState)
 		}
 		return;
 	case SDLK_PAGEUP:
-		if (stextflag != STORE_NONE) {
+		if (stextflag != TalkID::None) {
 			StorePrior();
 		} else if (ChatLogFlag) {
 			ChatLogScrollTop();
 		}
 		return;
 	case SDLK_PAGEDOWN:
-		if (stextflag != STORE_NONE) {
+		if (stextflag != TalkID::None) {
 			StoreNext();
 		} else if (ChatLogFlag) {
 			ChatLogScrollBottom();
@@ -622,6 +625,15 @@ void PressKey(SDL_Keycode vkey, uint16_t modState)
 
 void HandleMouseButtonDown(Uint8 button, uint16_t modState)
 {
+	if (stextflag != TalkID::None && (button == SDL_BUTTON_X1
+#if !SDL_VERSION_ATLEAST(2, 0, 0)
+	        || button == 8
+#endif
+	        )) {
+		StoreESC();
+		return;
+	}
+
 	if (sgbMouseDown == CLICK_NONE) {
 		switch (button) {
 		case SDL_BUTTON_LEFT:
@@ -649,7 +661,7 @@ void HandleMouseButtonUp(Uint8 button, uint16_t modState)
 		LastMouseButtonAction = MouseActionType::None;
 		sgbMouseDown = CLICK_NONE;
 	} else {
-		sgOptions.Keymapper.KeyReleased(button | KeymapperMouseButtonMask);
+		sgOptions.Keymapper.KeyReleased(static_cast<SDL_Keycode>(button | KeymapperMouseButtonMask));
 	}
 }
 
@@ -728,6 +740,8 @@ void GameEventHandler(const SDL_Event &event, uint16_t modState)
 		return;
 #endif
 	case SDL_MOUSEMOTION:
+		if (ControlMode == ControlTypes::KeyboardAndMouse && invflag)
+			InvalidateInventorySlot();
 		MousePosition = { event.motion.x, event.motion.y };
 		gmenu_on_mouse_move();
 		return;
@@ -746,8 +760,6 @@ void GameEventHandler(const SDL_Event &event, uint16_t modState)
 			nthread_ignore_mutex(true);
 			PaletteFadeOut(8);
 			sound_stop();
-			LastMouseButtonAction = MouseActionType::None;
-			sgbMouseDown = CLICK_NONE;
 			ShowProgress(GetCustomEvent(event.type));
 
 			RedrawEverything();
@@ -781,7 +793,7 @@ void RunGameLoop(interface_mode uMsg)
 	EventHandler previousHandler = SetEventHandler(GameEventHandler);
 	run_delta_info();
 	gbRunGame = true;
-	gbProcessPlayers = true;
+	gbProcessPlayers = IsDiabloAlive(true);
 	gbRunGameResult = true;
 
 	RedrawEverything();
@@ -831,7 +843,7 @@ void RunGameLoop(interface_mode uMsg)
 
 		bool drawGame = true;
 		bool processInput = true;
-		bool runGameLoop = demo::IsRunning() ? demo::GetRunGameLoop(drawGame, processInput) : nthread_has_500ms_passed();
+		bool runGameLoop = demo::IsRunning() ? demo::GetRunGameLoop(drawGame, processInput) : nthread_has_500ms_passed(&drawGame);
 		if (demo::IsRecording())
 			demo::RecordGameLoopResult(runGameLoop);
 
@@ -1082,11 +1094,10 @@ void CheckArchivesUpToDate()
 {
 #ifdef UNPACKED_MPQS
 	const bool devilutionxMpqOutOfDate = false;
-	const bool fontsMpqOutOfDate = font_data_path && !FileExists(*font_data_path + "fonts" + DirectorySeparator + "12-4e.clx");
 #else
-	const bool devilutionxMpqOutOfDate = devilutionx_mpq && !devilutionx_mpq->HasFile("data\\charbg.clx");
-	const bool fontsMpqOutOfDate = font_mpq && !font_mpq->HasFile("fonts\\12-4e.clx");
+	const bool devilutionxMpqOutOfDate = devilutionx_mpq && (!devilutionx_mpq->HasFile("data\\charbg.clx") || devilutionx_mpq->HasFile("fonts\\12-00.bin"));
 #endif
+	const bool fontsMpqOutOfDate = AreExtraFontsOutOfDate();
 
 	if (devilutionxMpqOutOfDate && fontsMpqOutOfDate) {
 		app_fatal(_("Please update devilutionx.mpq and fonts.mpq to the latest version"));
@@ -1099,7 +1110,7 @@ void CheckArchivesUpToDate()
 	}
 }
 
-void DiabloInit()
+void ApplicationInit()
 {
 	if (*sgOptions.Graphics.showFPS)
 		EnableFrameCount();
@@ -1107,6 +1118,15 @@ void DiabloInit()
 	init_create_window();
 	was_window_init = true;
 
+	LanguageInitialize();
+
+	SetApplicationVersions();
+
+	ReadOnlyTest();
+}
+
+void DiabloInit()
+{
 	if (forceSpawn || *sgOptions.StartUp.shareware)
 		gbIsSpawn = true;
 	if (forceDiablo || *sgOptions.StartUp.gameMode == StartUpGameMode::Diablo)
@@ -1115,10 +1135,6 @@ void DiabloInit()
 		gbIsHellfire = true;
 
 	gbIsHellfireSaveGame = gbIsHellfire;
-
-	LanguageInitialize();
-
-	SetApplicationVersions();
 
 	for (size_t i = 0; i < QUICK_MESSAGE_OPTIONS; i++) {
 		auto &messages = sgOptions.Chat.szHotKeyMsgs[i];
@@ -1133,8 +1149,6 @@ void DiabloInit()
 
 	UiInitialize();
 	was_ui_init = true;
-
-	ReadOnlyTest();
 
 	if (gbIsHellfire && !forceHellfire && *sgOptions.StartUp.gameMode == StartUpGameMode::Ask) {
 		UiSelStartUpGameOption();
@@ -1341,7 +1355,7 @@ void UpdateMonsterLights()
 		}
 
 		if (monster.lightId != NO_LIGHT) {
-			if (monster.lightId == MyPlayer->_plid) { // Fix old saves where some monsters had 0 instead of NO_LIGHT
+			if (monster.lightId == MyPlayer->lightId) { // Fix old saves where some monsters had 0 instead of NO_LIGHT
 				monster.lightId = NO_LIGHT;
 				continue;
 			}
@@ -1428,14 +1442,14 @@ void HelpKeyPressed()
 {
 	if (HelpFlag) {
 		HelpFlag = false;
-	} else if (stextflag != STORE_NONE) {
+	} else if (stextflag != TalkID::None) {
 		InfoString = {};
 		AddPanelString(_("No help available")); /// BUGFIX: message isn't displayed
 		AddPanelString(_("while in stores"));
 		LastMouseButtonAction = MouseActionType::None;
 	} else {
 		CloseInventory();
-		chrflag = false;
+		CloseCharPanel();
 		sbookflag = false;
 		spselflag = false;
 		if (qtextflag && leveltype == DTYPE_TOWN) {
@@ -1452,7 +1466,7 @@ void HelpKeyPressed()
 
 void InventoryKeyPressed()
 {
-	if (stextflag != STORE_NONE)
+	if (stextflag != TalkID::None)
 		return;
 	invflag = !invflag;
 	if (!IsLeftPanelOpen() && CanPanelsCoverView()) {
@@ -1468,16 +1482,15 @@ void InventoryKeyPressed()
 	}
 	sbookflag = false;
 	CloseGoldWithdraw();
-	IsStashOpen = false;
+	CloseStash();
 }
 
 void CharacterSheetKeyPressed()
 {
-	if (stextflag != STORE_NONE)
+	if (stextflag != TalkID::None)
 		return;
-	chrflag = !chrflag;
 	if (!IsRightPanelOpen() && CanPanelsCoverView()) {
-		if (!chrflag) { // We closed the character sheet
+		if (chrflag) { // We are closing the character sheet
 			if (MousePosition.x > 160 && MousePosition.y < GetMainPanel().position.y) {
 				SetCursorPos(MousePosition - Displacement { 160, 0 });
 			}
@@ -1487,14 +1500,12 @@ void CharacterSheetKeyPressed()
 			}
 		}
 	}
-	QuestLogIsOpen = false;
-	CloseGoldWithdraw();
-	IsStashOpen = false;
+	ToggleCharPanel();
 }
 
 void QuestLogKeyPressed()
 {
-	if (stextflag != STORE_NONE)
+	if (stextflag != TalkID::None)
 		return;
 	if (!QuestLogIsOpen) {
 		StartQuestlog();
@@ -1512,16 +1523,16 @@ void QuestLogKeyPressed()
 			}
 		}
 	}
-	chrflag = false;
+	CloseCharPanel();
 	CloseGoldWithdraw();
-	IsStashOpen = false;
+	CloseStash();
 }
 
 void DisplaySpellsKeyPressed()
 {
-	if (stextflag != STORE_NONE)
+	if (stextflag != TalkID::None)
 		return;
-	chrflag = false;
+	CloseCharPanel();
 	QuestLogIsOpen = false;
 	CloseInventory();
 	sbookflag = false;
@@ -1535,7 +1546,7 @@ void DisplaySpellsKeyPressed()
 
 void SpellBookKeyPressed()
 {
-	if (stextflag != STORE_NONE)
+	if (stextflag != TalkID::None)
 		return;
 	sbookflag = !sbookflag;
 	if (!IsLeftPanelOpen() && CanPanelsCoverView()) {
@@ -1579,7 +1590,7 @@ void InitKeymapActions()
 		    [i] {
 			    Player &myPlayer = *MyPlayer;
 			    if (!myPlayer.SpdList[i].isEmpty() && myPlayer.SpdList[i]._itype != ItemType::Gold) {
-				    UseInvItem(MyPlayerId, INVITEM_BELT_FIRST + i);
+				    UseInvItem(INVITEM_BELT_FIRST + i);
 			    }
 		    },
 		    nullptr,
@@ -1645,7 +1656,7 @@ void InitKeymapActions()
 	    SDLK_F3,
 	    [] { gamemenu_load_game(false); },
 	    nullptr,
-	    [&]() { return !gbIsMultiplayer && gbValidSaveFile && stextflag == STORE_NONE && IsGameRunning(); });
+	    [&]() { return !gbIsMultiplayer && gbValidSaveFile && stextflag == TalkID::None && IsGameRunning(); });
 #ifndef NOEXIT
 	sgOptions.Keymapper.AddAction(
 	    "QuitGame",
@@ -1667,8 +1678,8 @@ void InitKeymapActions()
 	    N_("Item highlighting"),
 	    N_("Show/hide items on ground."),
 	    SDLK_LALT,
-	    [] { AltPressed(true); },
-	    [] { AltPressed(false); });
+	    [] { HighlightKeyPressed(true); },
+	    [] { HighlightKeyPressed(false); });
 	sgOptions.Keymapper.AddAction(
 	    "Toggle Item Highlighting",
 	    N_("Toggle item highlighting"),
@@ -1843,7 +1854,7 @@ void InitPadmapActions()
 		    [i] {
 			    Player &myPlayer = *MyPlayer;
 			    if (!myPlayer.SpdList[i].isEmpty() && myPlayer.SpdList[i]._itype != ItemType::Gold) {
-				    UseInvItem(MyPlayerId, INVITEM_BELT_FIRST + i);
+				    UseInvItem(INVITEM_BELT_FIRST + i);
 			    }
 		    },
 		    nullptr,
@@ -1976,8 +1987,8 @@ void InitPadmapActions()
 	    N_("Toggle stand ground"),
 	    N_("Toggle whether the player moves."),
 	    ControllerButton_NONE,
-	    [] { StandToggle = true; },
-	    [] { StandToggle = false; },
+	    [] { StandToggle = !StandToggle; },
+	    nullptr,
 	    CanPlayerTakeAction);
 	sgOptions.Padmapper.AddAction(
 	    "UseHealthPotion",
@@ -2073,60 +2084,58 @@ void InitPadmapActions()
 	    N_("Simulates rightward mouse movement."),
 	    { ControllerButton_BUTTON_BACK, ControllerButton_BUTTON_DPAD_RIGHT },
 	    [] {});
+	auto leftMouseDown = [] {
+		ControllerButtonCombo standGroundCombo = sgOptions.Padmapper.ButtonComboForAction("StandGround");
+		bool standGround = StandToggle || IsControllerButtonComboPressed(standGroundCombo);
+		sgbMouseDown = CLICK_LEFT;
+		LeftMouseDown(standGround ? KMOD_SHIFT : KMOD_NONE);
+	};
+	auto leftMouseUp = [] {
+		ControllerButtonCombo standGroundCombo = sgOptions.Padmapper.ButtonComboForAction("StandGround");
+		bool standGround = StandToggle || IsControllerButtonComboPressed(standGroundCombo);
+		LastMouseButtonAction = MouseActionType::None;
+		sgbMouseDown = CLICK_NONE;
+		LeftMouseUp(standGround ? KMOD_SHIFT : KMOD_NONE);
+	};
 	sgOptions.Padmapper.AddAction(
 	    "LeftMouseClick1",
 	    N_("Left mouse click"),
 	    N_("Simulates the left mouse button."),
 	    ControllerButton_BUTTON_RIGHTSTICK,
-	    [] {
-		    sgbMouseDown = CLICK_LEFT;
-		    LeftMouseDown(KMOD_NONE);
-	    },
-	    [] {
-		    LastMouseButtonAction = MouseActionType::None;
-		    sgbMouseDown = CLICK_NONE;
-		    LeftMouseUp(KMOD_NONE);
-	    });
+	    leftMouseDown,
+	    leftMouseUp);
 	sgOptions.Padmapper.AddAction(
 	    "LeftMouseClick2",
 	    N_("Left mouse click"),
 	    N_("Simulates the left mouse button."),
 	    { ControllerButton_BUTTON_BACK, ControllerButton_BUTTON_LEFTSHOULDER },
-	    [] {
-		    sgbMouseDown = CLICK_LEFT;
-		    LeftMouseDown(KMOD_NONE);
-	    },
-	    [] {
-		    LastMouseButtonAction = MouseActionType::None;
-		    sgbMouseDown = CLICK_NONE;
-		    LeftMouseUp(KMOD_NONE);
-	    });
+	    leftMouseDown,
+	    leftMouseUp);
+	auto rightMouseDown = [] {
+		ControllerButtonCombo standGroundCombo = sgOptions.Padmapper.ButtonComboForAction("StandGround");
+		bool standGround = StandToggle || IsControllerButtonComboPressed(standGroundCombo);
+		LastMouseButtonAction = MouseActionType::None;
+		sgbMouseDown = CLICK_RIGHT;
+		RightMouseDown(standGround);
+	};
+	auto rightMouseUp = [] {
+		LastMouseButtonAction = MouseActionType::None;
+		sgbMouseDown = CLICK_NONE;
+	};
 	sgOptions.Padmapper.AddAction(
 	    "RightMouseClick1",
 	    N_("Right mouse click"),
 	    N_("Simulates the right mouse button."),
 	    { ControllerButton_BUTTON_BACK, ControllerButton_BUTTON_RIGHTSTICK },
-	    [] {
-		    sgbMouseDown = CLICK_RIGHT;
-		    RightMouseDown(false);
-	    },
-	    [] {
-		    LastMouseButtonAction = MouseActionType::None;
-		    sgbMouseDown = CLICK_NONE;
-	    });
+	    rightMouseDown,
+	    rightMouseUp);
 	sgOptions.Padmapper.AddAction(
 	    "RightMouseClick2",
 	    N_("Right mouse click"),
 	    N_("Simulates the right mouse button."),
 	    { ControllerButton_BUTTON_BACK, ControllerButton_BUTTON_RIGHTSHOULDER },
-	    [] {
-		    sgbMouseDown = CLICK_RIGHT;
-		    RightMouseDown(false);
-	    },
-	    [] {
-		    LastMouseButtonAction = MouseActionType::None;
-		    sgbMouseDown = CLICK_NONE;
-	    });
+	    rightMouseDown,
+	    rightMouseUp);
 	sgOptions.Padmapper.AddAction(
 	    "PadHotspellMenu",
 	    N_("Gamepad hotspell menu"),
@@ -2183,14 +2192,14 @@ void InitPadmapActions()
 	    ControllerButton_NONE,
 	    [] { gamemenu_load_game(false); },
 	    nullptr,
-	    [&]() { return !gbIsMultiplayer && gbValidSaveFile && stextflag == STORE_NONE && IsGameRunning(); });
+	    [&]() { return !gbIsMultiplayer && gbValidSaveFile && stextflag == TalkID::None && IsGameRunning(); });
 	sgOptions.Padmapper.AddAction(
 	    "Item Highlighting",
 	    N_("Item highlighting"),
 	    N_("Show/hide items on ground."),
 	    ControllerButton_NONE,
-	    [] { AltPressed(true); },
-	    [] { AltPressed(false); });
+	    [] { HighlightKeyPressed(true); },
+	    [] { HighlightKeyPressed(false); });
 	sgOptions.Padmapper.AddAction(
 	    "Toggle Item Highlighting",
 	    N_("Toggle item highlighting"),
@@ -2290,6 +2299,18 @@ void InitPadmapActions()
 		    ToggleChatLog();
 	    });
 	sgOptions.Padmapper.CommitActions();
+}
+
+void SetCursorPos(Point position)
+{
+	if (ControlDevice != ControlTypes::KeyboardAndMouse) {
+		MousePosition = position;
+		return;
+	}
+
+	LogicalToOutput(&position.x, &position.y);
+	if (!demo::IsRunning())
+		SDL_WarpMouseInWindow(ghMainWnd, position.x, position.y);
 }
 
 void FreeGameMem()
@@ -2392,6 +2413,9 @@ int DiabloMain(int argc, char **argv)
 	// Then look for a voice pack file based on the selected translation
 	LoadLanguageArchive();
 
+	ApplicationInit();
+	SaveOptions();
+
 	// Finally load game data
 	LoadGameArchives();
 
@@ -2438,9 +2462,9 @@ bool TryIconCurs()
 	Player &myPlayer = *MyPlayer;
 
 	if (pcurs == CURSOR_IDENTIFY) {
-		if (pcursinvitem != -1)
+		if (pcursinvitem != -1 && !IsInspectingPlayer())
 			CheckIdentify(myPlayer, pcursinvitem);
-		else if (pcursstashitem != uint16_t(-1)) {
+		else if (pcursstashitem != StashStruct::EmptyCell) {
 			Item &item = Stash.stashList[pcursstashitem];
 			item._iIdentified = true;
 		}
@@ -2449,9 +2473,9 @@ bool TryIconCurs()
 	}
 
 	if (pcurs == CURSOR_REPAIR) {
-		if (pcursinvitem != -1)
+		if (pcursinvitem != -1 && !IsInspectingPlayer())
 			DoRepair(myPlayer, pcursinvitem);
-		else if (pcursstashitem != uint16_t(-1)) {
+		else if (pcursstashitem != StashStruct::EmptyCell) {
 			Item &item = Stash.stashList[pcursstashitem];
 			RepairItem(item, myPlayer._pLevel);
 		}
@@ -2460,9 +2484,9 @@ bool TryIconCurs()
 	}
 
 	if (pcurs == CURSOR_RECHARGE) {
-		if (pcursinvitem != -1)
+		if (pcursinvitem != -1 && !IsInspectingPlayer())
 			DoRecharge(myPlayer, pcursinvitem);
-		else if (pcursstashitem != uint16_t(-1)) {
+		else if (pcursstashitem != StashStruct::EmptyCell) {
 			Item &item = Stash.stashList[pcursstashitem];
 			RechargeItem(item, myPlayer);
 		}
@@ -2472,9 +2496,9 @@ bool TryIconCurs()
 
 	if (pcurs == CURSOR_OIL) {
 		bool changeCursor = true;
-		if (pcursinvitem != -1)
+		if (pcursinvitem != -1 && !IsInspectingPlayer())
 			changeCursor = DoOil(myPlayer, pcursinvitem);
-		else if (pcursstashitem != uint16_t(-1)) {
+		else if (pcursstashitem != StashStruct::EmptyCell) {
 			Item &item = Stash.stashList[pcursstashitem];
 			changeCursor = ApplyOilToItem(item, myPlayer);
 		}
@@ -2484,12 +2508,20 @@ bool TryIconCurs()
 	}
 
 	if (pcurs == CURSOR_TELEPORT) {
-		if (pcursmonst != -1)
-			NetSendCmdParam4(true, CMD_TSPELLID, pcursmonst, myPlayer._pTSpell, myPlayer.GetSpellLevel(myPlayer._pTSpell), myPlayer.queuedSpell.spellFrom);
-		else if (pcursplr != -1)
-			NetSendCmdParam4(true, CMD_TSPELLPID, pcursplr, myPlayer._pTSpell, myPlayer.GetSpellLevel(myPlayer._pTSpell), myPlayer.queuedSpell.spellFrom);
-		else
-			NetSendCmdLocParam3(true, CMD_TSPELLXY, cursPosition, myPlayer._pTSpell, myPlayer.GetSpellLevel(myPlayer._pTSpell), myPlayer.queuedSpell.spellFrom);
+		const SpellID spellID = myPlayer.inventorySpell;
+		const SpellType spellType = SpellType::Scroll;
+		const int spellLevel = myPlayer.GetSpellLevel(spellID);
+		const int spellFrom = myPlayer.spellFrom;
+		if (IsWallSpell(spellID)) {
+			Direction sd = GetDirection(myPlayer.position.tile, cursPosition);
+			NetSendCmdLocParam5(true, CMD_SPELLXYD, cursPosition, static_cast<int8_t>(spellID), static_cast<uint8_t>(spellType), static_cast<uint16_t>(sd), spellLevel, spellFrom);
+		} else if (pcursmonst != -1) {
+			NetSendCmdParam5(true, CMD_SPELLID, pcursmonst, static_cast<int8_t>(spellID), static_cast<uint8_t>(spellType), spellLevel, spellFrom);
+		} else if (pcursplr != -1 && !myPlayer.friendlyMode) {
+			NetSendCmdParam5(true, CMD_SPELLPID, pcursplr, static_cast<int8_t>(spellID), static_cast<uint8_t>(spellType), spellLevel, spellFrom);
+		} else {
+			NetSendCmdLocParam4(true, CMD_SPELLXY, cursPosition, static_cast<int8_t>(spellID), static_cast<uint8_t>(spellType), spellLevel, spellFrom);
+		}
 		NewCursor(CURSOR_HAND);
 		return true;
 	}
@@ -2588,7 +2620,7 @@ bool PressEscKey()
 		rv = true;
 	}
 
-	if (stextflag != STORE_NONE) {
+	if (stextflag != TalkID::None) {
 		StoreESC();
 		rv = true;
 	}
@@ -2656,6 +2688,7 @@ void DisableInputEventHandler(const SDL_Event &event, uint16_t modState)
 void LoadGameLevel(bool firstflag, lvl_entry lvldir)
 {
 	_music_id neededTrack = GetLevelMusic(leveltype);
+	ClearFloatingNumbers();
 
 	if (neededTrack != sgnMusicTrack)
 		music_stop();
@@ -2681,7 +2714,14 @@ void LoadGameLevel(bool firstflag, lvl_entry lvldir)
 		InitStores();
 		InitAutomapOnce();
 	}
-	SetRndSeed(glSeedTbl[currlevel]);
+	if (!setlevel) {
+		SetRndSeed(glSeedTbl[currlevel]);
+	} else {
+		// Maps are not randomly generated, but the monsters max hitpoints are.
+		// So we need to ensure that we have a stable seed when generating quest/set-maps.
+		// For this purpose we reuse the normal dungeon seeds.
+		SetRndSeed(glSeedTbl[static_cast<size_t>(setlvlnum)]);
+	}
 
 	if (leveltype == DTYPE_TOWN) {
 		SetupTownStores();
@@ -2698,7 +2738,6 @@ void LoadGameLevel(bool firstflag, lvl_entry lvldir)
 
 	if (leveltype != DTYPE_TOWN && lvldir != ENTRY_LOAD) {
 		InitLighting();
-		InitVision();
 	}
 
 	InitLevelMonsters();
@@ -2730,8 +2769,11 @@ void LoadGameLevel(bool firstflag, lvl_entry lvldir)
 
 		IncProgress();
 
-		if (lvldir == ENTRY_RTNLVL)
-			GetReturnLvlPos();
+		if (lvldir == ENTRY_RTNLVL) {
+			ViewPosition = GetMapReturnPosition();
+			if (Quests[Q_BETRAYER]._qactive == QUEST_DONE)
+				Quests[Q_BETRAYER]._qvar2 = 2;
+		}
 		if (lvldir == ENTRY_WARPLVL)
 			GetPortalLvlPos();
 
@@ -2775,12 +2817,11 @@ void LoadGameLevel(bool firstflag, lvl_entry lvldir)
 #ifdef _DEBUG
 				SetDebugLevelSeedInfos(mid1Seed, mid2Seed, mid3Seed, GetLCGEngineState());
 #endif
+				SavePreLighting();
+				IncProgress();
 
 				if (gbIsMultiplayer)
 					DeltaLoadLevel();
-
-				IncProgress();
-				SavePreLighting();
 			} else {
 				HoldThemeRooms();
 				InitGolems();
@@ -2875,9 +2916,7 @@ void LoadGameLevel(bool firstflag, lvl_entry lvldir)
 	for (Player &player : Players) {
 		if (player.plractive && player.isOnActiveLevel() && (!player._pLvlChanging || &player == MyPlayer)) {
 			if (player._pHitPoints > 0) {
-				if (!gbIsMultiplayer)
-					dPlayer[player.position.tile.x][player.position.tile.y] = player.getId() + 1;
-				else
+				if (lvldir != ENTRY_LOAD)
 					SyncInitPlrPos(player);
 			} else {
 				dFlags[player.position.tile.x][player.position.tile.y] |= DungeonFlag::DeadPlayer;
@@ -2895,12 +2934,14 @@ void LoadGameLevel(bool firstflag, lvl_entry lvldir)
 	UpdateMonsterLights();
 	UnstuckChargers();
 	if (leveltype != DTYPE_TOWN) {
+		memcpy(dLight, dPreLight, sizeof(dLight));                                     // resets the light on entering a level to get rid of incorrect light
+		ChangeLightXY(Players[MyPlayerId].lightId, Players[MyPlayerId].position.tile); // forces player light refresh
 		ProcessLightList();
 		ProcessVisionList();
 	}
 
 	if (leveltype == DTYPE_CRYPT) {
-		if (currlevel == 21) {
+		if (CornerStone.isAvailable()) {
 			CornerstoneLoad(CornerStone.position);
 		}
 		if (Quests[Q_NAKRUL]._qactive == QUEST_DONE && currlevel == 24) {
@@ -2921,12 +2962,12 @@ void LoadGameLevel(bool firstflag, lvl_entry lvldir)
 
 	CompleteProgress();
 
-	// Reset mouse selection of entities
-	pcursmonst = -1;
-	ObjectUnderCursor = nullptr;
-	pcursitem = -1;
-	pcursinvitem = -1;
-	pcursplr = -1;
+	// Recalculate mouse selection of entities after level change/load
+	LastMouseButtonAction = MouseActionType::None;
+	sgbMouseDown = CLICK_NONE;
+	ResetItemlabelHighlighted(); // level changed => item changed
+	pcursmonst = -1;             // ensure pcurstemp is set to a valid value
+	CheckCursMove();
 }
 
 bool game_loop(bool bStartup)
@@ -2969,6 +3010,22 @@ void diablo_color_cyc_logic()
 	} else if (leveltype == DTYPE_CRYPT) {
 		palette_update_crypt();
 	}
+}
+
+bool IsDiabloAlive(bool playSFX)
+{
+	if (Quests[Q_DIABLO]._qactive == QUEST_DONE && !gbIsMultiplayer) {
+		if (playSFX)
+			PlaySFX(USFX_DIABLOD);
+		return false;
+	}
+
+	return true;
+}
+
+void PrintScreen(SDL_Keycode vkey)
+{
+	ReleaseKey(vkey);
 }
 
 } // namespace devilution

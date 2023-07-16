@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <cmath>
+#include <cstdint>
 #include <utility>
 
 #include <Aulib/DecoderDrmp3.h>
@@ -66,7 +67,11 @@ std::unique_ptr<Aulib::Decoder> CreateDecoder(bool isMp3)
 
 std::unique_ptr<Aulib::Stream> CreateStream(SDL_RWops *handle, bool isMp3)
 {
-	return std::make_unique<Aulib::Stream>(handle, CreateDecoder(isMp3), CreateAulibResampler(), /*closeRw=*/true);
+	auto decoder = CreateDecoder(isMp3);
+	if (!decoder->open(handle)) // open for `getRate`
+		return nullptr;
+	auto resampler = CreateAulibResampler(decoder->getRate());
+	return std::make_unique<Aulib::Stream>(handle, std::move(decoder), std::move(resampler), /*closeRw=*/true);
 }
 
 /**
@@ -89,10 +94,8 @@ float VolumeLogToLinear(int logVolume, int logMin, int logMax)
 void SoundSample::Release()
 {
 	stream_ = nullptr;
-#ifndef STREAM_ALL_AUDIO
 	file_data_ = nullptr;
 	file_data_size_ = 0;
-#endif
 }
 
 /**
@@ -117,7 +120,7 @@ int SoundSample::SetChunkStream(std::string filePath, bool isMp3, bool logErrors
 	SDL_RWops *handle = OpenAssetAsSdlRwOps(filePath.c_str(), /*threadsafe=*/true);
 	if (handle == nullptr) {
 		if (logErrors)
-			LogError(LogCategory::Audio, "OpenAsset failed (from SoundSample::SetChunkStream): {}", SDL_GetError());
+			LogError(LogCategory::Audio, "OpenAsset failed (from SoundSample::SetChunkStream) for {}: {}", filePath, SDL_GetError());
 		return -1;
 	}
 	file_path_ = std::move(filePath);
@@ -126,13 +129,12 @@ int SoundSample::SetChunkStream(std::string filePath, bool isMp3, bool logErrors
 	if (!stream_->open()) {
 		stream_ = nullptr;
 		if (logErrors)
-			LogError(LogCategory::Audio, "Aulib::Stream::open (from SoundSample::SetChunkStream): {}", SDL_GetError());
+			LogError(LogCategory::Audio, "Aulib::Stream::open (from SoundSample::SetChunkStream) for {}: {}", file_path_, SDL_GetError());
 		return -1;
 	}
 	return 0;
 }
 
-#ifndef STREAM_ALL_AUDIO
 int SoundSample::SetChunk(ArraySharedPtr<std::uint8_t> fileData, std::size_t dwBytes, bool isMp3)
 {
 	isMp3_ = isMp3;
@@ -153,7 +155,6 @@ int SoundSample::SetChunk(ArraySharedPtr<std::uint8_t> fileData, std::size_t dwB
 
 	return 0;
 }
-#endif
 
 void SoundSample::SetVolume(int logVolume, int logMin, int logMax)
 {

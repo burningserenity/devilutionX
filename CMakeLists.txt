@@ -1,6 +1,6 @@
-cmake_minimum_required(VERSION 3.13)
+cmake_minimum_required(VERSION 3.15)
 
-foreach(_policy CMP0083 CMP0092 CMP0111 CMP0126 CMP0135)
+foreach(_policy CMP0111 CMP0126 CMP0135)
   if(POLICY ${_policy})
     cmake_policy(SET ${_policy} NEW)
     set(CMAKE_POLICY_DEFAULT_${_policy} NEW)
@@ -48,27 +48,36 @@ include(VcPkgManifestFeatures)
 # 2. Toolchain file is evaluated, required for `Platforms.cmake`,
 #    which can override the options.
 if(NOT VERSION_NUM)
-  include(functions/git)
-  get_git_tag(VERSION_NUM)
-  if(NOT "${VERSION_NUM}" STREQUAL "")
-    string(REGEX MATCH "([0-9]+\\.[0-9]+\\.[0-9]+)" VERSION_NUM ${VERSION_NUM} )
-  endif()
-  if(NOT VERSION_SUFFIX)
-    get_git_commit_hash(GIT_COMMIT_HASH)
-    set(VERSION_SUFFIX "${GIT_COMMIT_HASH}")
+  file(STRINGS "VERSION" VERSION_STR)
+  if(NOT "${VERSION_STR}" STREQUAL "")
+    string(REGEX MATCH "([0-9]+\\.[0-9]+\\.[0-9]+)(.*)?" VERSION_PREFIX ${VERSION_STR})
+    set(VERSION_NUM ${CMAKE_MATCH_1})
   endif()
 endif()
+
 if(NOT VERSION_SUFFIX)
-  set(VERSION_SUFFIX "debug")
+  # For versions with a suffix, e.g. "1.5.0-dev", include
+  # the build type and the git hash.
+  set(VERSION_SUFFIX "-$<CONFIG>")
+  if(VERSION_PREFIX MATCHES "-")
+    if(NOT GIT_COMMIT_HASH)
+      include(functions/git)
+      get_git_commit_hash(GIT_COMMIT_HASH)
+    endif()
+    if(GIT_COMMIT_HASH)
+      set(VERSION_SUFFIX "${VERSION_SUFFIX}-${GIT_COMMIT_HASH}")
+    endif()
+  else()
+    # For versions without a suffix, e.g. "1.5.0" rather than "1.5.0-dev",
+    # only include the build type if it is a debug build.
+    set(VERSION_SUFFIX "$<$<CONFIG:Debug>:$<CONFIG>>")
+  endif()
 endif()
-if(VERSION_NUM MATCHES untagged)
-  project(DevilutionX LANGUAGES C CXX)
-else()
-  project(DevilutionX
-    VERSION ${VERSION_NUM}
-    LANGUAGES C CXX)
-endif()
-set(PROJECT_VERSION_WITH_SUFFIX "${PROJECT_VERSION}$<$<CONFIG:Debug>:-${VERSION_SUFFIX}>")
+
+project(DevilutionX
+  VERSION ${VERSION_NUM}
+  LANGUAGES C CXX)
+set(PROJECT_VERSION_WITH_SUFFIX "${VERSION_PREFIX}${VERSION_SUFFIX}")
 
 # Platform definitions can override options and we want `cmake_dependent_option` to see the effects.
 # Note that a few options are still defined before this because they're needed by `VcPkgManifestFeatures.cmake`.
@@ -125,12 +134,13 @@ include(MoldLinker)
 
 # Memory / performance trade-off options
 option(UNPACKED_MPQS "Expect MPQs to be unpacked and the data converted with devilutionx-mpq-tools" OFF)
+option(UNPACKED_SAVES "Uses unpacked save files instead of MPQ .sv/.hsv files" OFF)
 option(DISABLE_STREAMING_MUSIC "Disable streaming music (to work around broken platform implementations)" OFF)
 mark_as_advanced(DISABLE_STREAMING_MUSIC)
 option(DISABLE_STREAMING_SOUNDS "Disable streaming sounds (to work around broken platform implementations)" OFF)
 mark_as_advanced(DISABLE_STREAMING_SOUNDS)
-option(STREAM_ALL_AUDIO "Stream all the audio. For extremely RAM-constrained platforms.")
-mark_as_advanced(STREAM_ALL_AUDIO)
+set(STREAM_ALL_AUDIO_MIN_FILE_SIZE "" CACHE STRING "If set, stream all the audio files larger than this size")
+mark_as_advanced(STREAM_ALL_AUDIO_MIN_FILE_SIZE)
 option(DEVILUTIONX_PALETTE_TRANSPARENCY_BLACK_16_LUT "Whether to use a lookup table for transparency blending with black. This improves performance of blending transparent black overlays, such as quest dialog background, at the cost of 128 KiB of RAM." ON)
 mark_as_advanced(DEVILUTIONX_PALETTE_TRANSPARENCY_BLACK_16_LUT)
 
@@ -138,18 +148,29 @@ mark_as_advanced(DEVILUTIONX_PALETTE_TRANSPARENCY_BLACK_16_LUT)
 option(DISABLE_DEMOMODE "Disable demo mode support" OFF)
 option(DISCORD_INTEGRATION "Build with Discord SDK for rich presence support" OFF)
 
-# By default, devilutionx.mpq is built only if smpq is installed.
-if(NOT DEFINED BUILD_ASSETS_MPQ AND NOT SRC_DIST)
-  find_program(SMPQ smpq)
-elseif(BUILD_ASSETS_MPQ)
-  find_program(SMPQ smpq REQUIRED)
-endif()
-if(SMPQ)
-  set(_has_smpq ON)
+# If both UNPACKED_MPQS and UNPACKED_SAVES are enabled, we completely remove MPQ support.
+if(UNPACKED_MPQS AND UNPACKED_SAVES)
+  set(SUPPORTS_MPQ OFF)
 else()
-  set(_has_smpq OFF)
+  set(SUPPORTS_MPQ ON)
 endif()
-option(BUILD_ASSETS_MPQ "If true, assets are packaged into devilutionx.mpq." ${_has_smpq})
+
+# By default, devilutionx.mpq is built only if smpq is installed and MPQ support is enabled.
+if(SUPPORTS_MPQ)
+  if(NOT DEFINED BUILD_ASSETS_MPQ AND NOT SRC_DIST)
+    find_program(SMPQ smpq)
+  elseif(BUILD_ASSETS_MPQ)
+    find_program(SMPQ smpq REQUIRED)
+  endif()
+  if(SMPQ)
+    set(_has_smpq ON)
+  else()
+    set(_has_smpq OFF)
+  endif()
+  option(BUILD_ASSETS_MPQ "If true, assets are packaged into devilutionx.mpq." ${_has_smpq})
+else()
+  set(BUILD_ASSETS_MPQS OFF)
+endif()
 
 # === Option overrides ===
 # TSAN is not compatible with ASAN.
@@ -228,13 +249,18 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang" AND NOT PS4)
   endif()
 endif()
 
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU")
+  # -fipa-pta and -fdevirtualize-at-ltrans improve performance.
+  add_compile_options("$<$<NOT:$<CONFIG:Debug>>:-fipa-pta;-fdevirtualize-at-ltrans>")
+endif()
+
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
   add_compile_options("$<$<BOOL:${DEVILUTIONX_PROFILE_GENERATE}>:-fprofile-generate>")
   add_link_options("$<$<BOOL:${DEVILUTIONX_PROFILE_GENERATE}>:-fprofile-generate>")
   add_compile_options("$<$<BOOL:${DEVILUTIONX_PROFILE_USE}>:-fprofile-use>")
   add_link_options("$<$<BOOL:${DEVILUTIONX_PROFILE_USE}>:-fprofile-use>")
-  add_compile_options("$<$<BOOL:${DEVILUTIONX_PROFILE_DIR}>:-fprofile-dir=${DEVILUTIONX_PROFILE_DIR}>")
-  add_link_options("$<$<BOOL:${DEVILUTIONX_PROFILE_DIR}>:-fprofile-dir=${DEVILUTIONX_PROFILE_DIR}>")
+  add_compile_options("$<$<BOOL:${DEVILUTIONX_PROFILE_DIR}>:-fprofile-dir=${DEVILUTIONX_PROFILE_DIR};-fprofile-prefix-path=${CMAKE_CURRENT_BINARY_DIR}>")
+  add_link_options("$<$<BOOL:${DEVILUTIONX_PROFILE_DIR}>:-fprofile-dir=${DEVILUTIONX_PROFILE_DIR};-fprofile-prefix-path=${CMAKE_CURRENT_BINARY_DIR}>")
 endif()
 
 # Not a genexp because CMake doesn't support it
@@ -307,6 +333,7 @@ else()
         TARGET ${BIN_TARGET} POST_BUILD
         DEPENDS ${BIN_TARGET}
         COMMAND $<$<CONFIG:Release>:${CMAKE_STRIP}>
+                $<$<CONFIG:MinSizeRel>:${CMAKE_STRIP}>
         ARGS $<TARGET_FILE:${BIN_TARGET}>)
     endif()
 endif()
@@ -563,13 +590,16 @@ if(CPACK AND (APPLE OR BUILD_ASSETS_MPQ OR SRC_DIST))
       DESTINATION "share/metainfo"
       RENAME "${project_name}.metainfo.xml"
     )
+    if(DISCORD_SHARED_LIB)
+      install(FILES "${DISCORD_SHARED_LIB}" DESTINATION "lib")
+    endif()
 
     # -G DEB
     set(CPACK_PACKAGE_CONTACT "anders@jenbo.dk")
     if(USE_SDL1)
     set(CPACK_DEBIAN_PACKAGE_DEPENDS "libsdl1.2debian")
     else()
-    set(CPACK_DEBIAN_PACKAGE_DEPENDS "libsdl2-2.0-0")
+    set(CPACK_DEBIAN_PACKAGE_DEPENDS "libsdl2-2.0-0, libsdl2-image-2.0-0")
     endif()
     set(CPACK_DEBIAN_FILE_NAME DEB-DEFAULT)
 

@@ -6,11 +6,12 @@
 #include "monster.h"
 
 #include <climits>
+#include <cstdint>
 
 #include <algorithm>
 #include <array>
 
-#include <fmt/compile.h>
+#include <fmt/core.h>
 #include <fmt/format.h>
 
 #include "control.h"
@@ -33,6 +34,7 @@
 #include "missiles.h"
 #include "movie.h"
 #include "options.h"
+#include "qol/floatingnumbers.h"
 #include "spelldat.h"
 #include "storm/storm_net.hpp"
 #include "towners.h"
@@ -54,9 +56,8 @@ size_t LevelMonsterTypeCount;
 Monster Monsters[MaxMonsters];
 int ActiveMonsters[MaxMonsters];
 size_t ActiveMonsterCount;
-// BUGFIX: replace MonsterKillCounts[MaxMonsters] with MonsterKillCounts[NUM_MTYPES].
 /** Tracks the total number of monsters killed per monster_id. */
-int MonsterKillCounts[MaxMonsters];
+int MonsterKillCounts[NUM_MTYPES];
 bool sgbSaveSoundOn;
 
 namespace {
@@ -151,7 +152,7 @@ void InitMonster(Monster &monster, Direction rd, size_t typeIndex, Point positio
 	monster.isInvalid = false;
 	monster.uniqueType = UniqueMonsterType::None;
 	monster.activeForTicks = 0;
-	monster.lightId = NO_LIGHT; // BUGFIX monsters initial light id should be -1 (fixed)
+	monster.lightId = NO_LIGHT;
 	monster.rndItemSeed = AdvanceRndSeed();
 	monster.aiSeed = AdvanceRndSeed();
 	monster.whoHit = 0;
@@ -167,7 +168,7 @@ void InitMonster(Monster &monster, Direction rd, size_t typeIndex, Point positio
 	monster.flags = monster.data().abilityFlags;
 	monster.talkMsg = TEXT_NONE;
 
-	if (monster.ai == AI_GARG) {
+	if (monster.ai == MonsterAIID::Gargoyle) {
 		monster.changeAnimationData(MonsterGraphic::Special);
 		monster.animInfo.currentFrame = 0;
 		monster.flags |= MFLAG_ALLOW_SPECIAL;
@@ -179,7 +180,7 @@ void InitMonster(Monster &monster, Direction rd, size_t typeIndex, Point positio
 		if (gbIsHellfire)
 			monster.maxHitPoints += (gbIsMultiplayer ? 100 : 50) << 6;
 		else
-			monster.maxHitPoints += 64;
+			monster.maxHitPoints += 100 << 6;
 		monster.hitPoints = monster.maxHitPoints;
 		monster.toHit += NightmareToHitBonus;
 		monster.minDamage = 2 * (monster.minDamage + 2);
@@ -192,7 +193,7 @@ void InitMonster(Monster &monster, Direction rd, size_t typeIndex, Point positio
 		if (gbIsHellfire)
 			monster.maxHitPoints += (gbIsMultiplayer ? 200 : 100) << 6;
 		else
-			monster.maxHitPoints += 192;
+			monster.maxHitPoints += 200 << 6;
 		monster.hitPoints = monster.maxHitPoints;
 		monster.toHit += HellToHitBonus;
 		monster.minDamage = 4 * monster.minDamage + 6;
@@ -281,7 +282,7 @@ void PlaceGroup(size_t typeIndex, unsigned num, Monster *leader = nullptr, bool 
 					minion.setLeader(leader);
 				}
 
-				if (minion.ai != AI_GARG) {
+				if (minion.ai != MonsterAIID::Gargoyle) {
 					minion.changeAnimationData(MonsterGraphic::Stand);
 					minion.animInfo.currentFrame = GenerateRnd(minion.animInfo.numberOfFrames - 1);
 					minion.flags &= ~MFLAG_ALLOW_SPECIAL;
@@ -604,7 +605,7 @@ void StartMonsterGotHit(Monster &monster)
 
 bool IsRanged(Monster &monster)
 {
-	return IsAnyOf(monster.ai, AI_SKELBOW, AI_GOATBOW, AI_SUCC, AI_LAZHELP);
+	return IsAnyOf(monster.ai, MonsterAIID::SkeletonRanged, MonsterAIID::GoatRanged, MonsterAIID::Succubus, MonsterAIID::LazarusSuccubus);
 }
 
 void UpdateEnemy(Monster &monster)
@@ -689,7 +690,7 @@ void AiDelay(Monster &monster, int len)
 		return;
 	}
 
-	if (monster.ai == AI_LAZARUS) {
+	if (monster.ai == MonsterAIID::Lazarus) {
 		return;
 	}
 
@@ -778,26 +779,26 @@ void StartAttack(Monster &monster)
 	monster.position.old = monster.position.tile;
 }
 
-void StartRangedAttack(Monster &monster, missile_id missileType, int dam)
+void StartRangedAttack(Monster &monster, MissileID missileType, int dam)
 {
 	Direction md = GetMonsterDirection(monster);
 	NewMonsterAnim(monster, MonsterGraphic::Attack, md, AnimationDistributionFlags::ProcessAnimationPending);
 	monster.mode = MonsterMode::RangedAttack;
-	monster.var1 = missileType;
+	monster.var1 = static_cast<int8_t>(missileType);
 	monster.var2 = dam;
 	monster.position.future = monster.position.tile;
 	monster.position.old = monster.position.tile;
 }
 
-void StartRangedSpecialAttack(Monster &monster, missile_id missileType, int dam)
+void StartRangedSpecialAttack(Monster &monster, MissileID missileType, int dam)
 {
 	Direction md = GetMonsterDirection(monster);
 	int8_t distributeFramesBeforeFrame = 0;
-	if (monster.ai == AI_MEGA)
+	if (monster.ai == MonsterAIID::Mega)
 		distributeFramesBeforeFrame = monster.data().animFrameNumSpecial;
 	NewMonsterAnim(monster, MonsterGraphic::Special, md, AnimationDistributionFlags::ProcessAnimationPending, 0, distributeFramesBeforeFrame);
 	monster.mode = MonsterMode::SpecialRangedAttack;
-	monster.var1 = missileType;
+	monster.var1 = static_cast<int8_t>(missileType);
 	monster.var2 = 0;
 	monster.var3 = dam;
 	monster.position.future = monster.position.tile;
@@ -869,8 +870,9 @@ void SpawnLoot(Monster &monster, bool sendmsg)
 	} else if (monster.uniqueType == UniqueMonsterType::Defiler) {
 		if (effect_is_playing(USFX_DEFILER8))
 			stream_stop();
-		Quests[Q_DEFILER]._qlog = false;
 		SpawnMapOfDoom(monster.position.tile, sendmsg);
+		Quests[Q_DEFILER]._qactive = QUEST_DONE;
+		NetSendCmdQuest(true, Quests[Q_DEFILER]);
 	} else if (monster.uniqueType == UniqueMonsterType::HorkDemon) {
 		if (sgGameInitInfo.bTheoQuest != 0) {
 			SpawnTheodore(monster.position.tile, sendmsg);
@@ -883,12 +885,11 @@ void SpawnLoot(Monster &monster, bool sendmsg)
 			nSFX = USFX_NAKRUL6;
 		if (effect_is_playing(nSFX))
 			stream_stop();
-		Quests[Q_NAKRUL]._qlog = false;
 		UberDiabloMonsterIndex = -2;
 		CreateMagicWeapon(monster.position.tile, ItemType::Sword, ICURS_GREAT_SWORD, sendmsg, false);
 		CreateMagicWeapon(monster.position.tile, ItemType::Staff, ICURS_WAR_STAFF, sendmsg, false);
 		CreateMagicWeapon(monster.position.tile, ItemType::Bow, ICURS_LONG_WAR_BOW, sendmsg, false);
-		CreateSpellBook(monster.position.tile, SPL_APOCA, sendmsg, false);
+		CreateSpellBook(monster.position.tile, SpellID::Apocalypse, sendmsg, false);
 	} else if (!monster.isPlayerMinion()) {
 		SpawnItem(monster, monster.position.tile, sendmsg);
 	}
@@ -1012,7 +1013,10 @@ void StartHeal(Monster &monster)
 
 void SyncLightPosition(Monster &monster)
 {
-	Displacement offset = monster.position.CalculateWalkingOffset(monster.direction, monster.animInfo);
+	if (monster.lightId == NO_LIGHT)
+		return;
+
+	const WorldTileDisplacement offset = monster.isWalking() ? monster.position.CalculateWalkingOffset(monster.direction, monster.animInfo) : WorldTileDisplacement {};
 	ChangeLightOffset(monster.lightId, offset.screenToLight());
 }
 
@@ -1066,7 +1070,7 @@ bool MonsterWalk(Monster &monster, MonsterMode variant)
 		}
 	}
 
-	if (monster.lightId != NO_LIGHT) // BUGFIX: change uniqtype check to lightId check like it is in all other places (fixed)
+	if (monster.lightId != NO_LIGHT)
 		SyncLightPosition(monster);
 
 	return isAnimationEnd;
@@ -1086,7 +1090,7 @@ void MonsterAttackMonster(Monster &attacker, Monster &target, int hper, int mind
 		return;
 
 	int dam = (mind + GenerateRnd(maxd - mind + 1)) << 6;
-	ApplyMonsterDamage(target, dam);
+	ApplyMonsterDamage(DamageType::Physical, target, dam);
 
 	if (attacker.isPlayerMinion()) {
 		int playerId = attacker.getId();
@@ -1106,19 +1110,20 @@ void MonsterAttackMonster(Monster &attacker, Monster &target, int hper, int mind
 	}
 }
 
-void CheckReflect(Monster &monster, Player &player, int &dam)
+int CheckReflect(Monster &monster, Player &player, int dam)
 {
 	player.wReflections--;
 	if (player.wReflections <= 0)
 		NetSendCmdParam1(true, CMD_SETREFLECT, 0);
 	// reflects 20-30% damage
-	int mdam = dam * (GenerateRnd(10) + 20L) / 100;
-	ApplyMonsterDamage(monster, mdam);
-	dam = std::max(dam - mdam, 0);
+	int mdam = dam * RandomIntBetween(20, 30, true) / 100;
+	ApplyMonsterDamage(DamageType::Physical, monster, mdam);
 	if (monster.hitPoints >> 6 <= 0)
 		M_StartKill(monster, player);
 	else
 		M_StartHit(monster, player, mdam);
+
+	return mdam;
 }
 
 int GetMinHit()
@@ -1192,15 +1197,17 @@ void MonsterAttackPlayer(Monster &monster, Player &player, int hit, int minDam, 
 	int dam = (minDam << 6) + GenerateRnd(((maxDam - minDam) << 6) + 1);
 	dam = std::max(dam + (player._pIGetHit << 6), 64);
 	if (&player == MyPlayer) {
-		if (player.wReflections > 0)
-			CheckReflect(monster, player, dam);
-		ApplyPlrDamage(player, 0, 0, dam);
+		if (player.wReflections > 0) {
+			int reflectedDamage = CheckReflect(monster, player, dam);
+			dam = std::max(dam - reflectedDamage, 0);
+		}
+		ApplyPlrDamage(DamageType::Physical, player, 0, 0, dam);
 	}
 
 	// Reflect can also kill a monster, so make sure the monster is still alive
 	if (HasAnyOf(player._pIFlags, ItemSpecialEffect::Thorns) && monster.mode != MonsterMode::Death) {
 		int mdam = (GenerateRnd(3) + 1) << 6;
-		ApplyMonsterDamage(monster, mdam);
+		ApplyMonsterDamage(DamageType::Physical, monster, mdam);
 		if (monster.hitPoints >> 6 <= 0)
 			M_StartKill(monster, player);
 		else
@@ -1242,7 +1249,7 @@ bool MonsterAttack(Monster &monster)
 {
 	if (monster.animInfo.currentFrame == monster.data().animFrameNum - 1) {
 		MonsterAttackEnemy(monster, monster.toHit, monster.minDamage, monster.maxDamage);
-		if (monster.ai != AI_SNAKE)
+		if (monster.ai != MonsterAIID::Snake)
 			PlayEffect(monster, MonsterSound::Attack);
 	}
 	if (IsAnyOf(monster.type().type, MT_NMAGMA, MT_YMAGMA, MT_BMAGMA, MT_WMAGMA) && monster.animInfo.currentFrame == 8) {
@@ -1255,7 +1262,7 @@ bool MonsterAttack(Monster &monster)
 
 		PlayEffect(monster, MonsterSound::Attack);
 	}
-	if (monster.ai == AI_SNAKE && monster.animInfo.currentFrame == 0)
+	if (monster.ai == MonsterAIID::Snake && monster.animInfo.currentFrame == 0)
 		PlayEffect(monster, MonsterSound::Attack);
 	if (monster.animInfo.isLastFrame()) {
 		M_StartStand(monster, monster.direction);
@@ -1268,10 +1275,10 @@ bool MonsterAttack(Monster &monster)
 bool MonsterRangedAttack(Monster &monster)
 {
 	if (monster.animInfo.currentFrame == monster.data().animFrameNum - 1) {
-		const auto &missileType = static_cast<missile_id>(monster.var1);
-		if (missileType != MIS_NULL) {
+		const auto &missileType = static_cast<MissileID>(monster.var1);
+		if (missileType != MissileID::Null) {
 			int multimissiles = 1;
-			if (missileType == MIS_CBOLT)
+			if (missileType == MissileID::ChargedBolt)
 				multimissiles = 3;
 			for (int mi = 0; mi < multimissiles; mi++) {
 				AddMissile(
@@ -1298,12 +1305,12 @@ bool MonsterRangedAttack(Monster &monster)
 
 bool MonsterRangedSpecialAttack(Monster &monster)
 {
-	if (monster.animInfo.currentFrame == monster.data().animFrameNumSpecial - 1 && monster.animInfo.tickCounterOfCurrentFrame == 0 && (monster.ai != AI_MEGA || monster.var2 == 0)) {
+	if (monster.animInfo.currentFrame == monster.data().animFrameNumSpecial - 1 && monster.animInfo.tickCounterOfCurrentFrame == 0 && (monster.ai != MonsterAIID::Mega || monster.var2 == 0)) {
 		if (AddMissile(
 		        monster.position.tile,
 		        monster.enemyPosition,
 		        monster.direction,
-		        static_cast<missile_id>(monster.var1),
+		        static_cast<MissileID>(monster.var1),
 		        TARGET_PLAYERS,
 		        monster.getId(),
 		        monster.var3,
@@ -1313,7 +1320,7 @@ bool MonsterRangedSpecialAttack(Monster &monster)
 		}
 	}
 
-	if (monster.ai == AI_MEGA && monster.animInfo.currentFrame == monster.data().animFrameNumSpecial - 1) {
+	if (monster.ai == MonsterAIID::Mega && monster.animInfo.currentFrame == monster.data().animFrameNumSpecial - 1) {
 		if (monster.var2++ == 0) {
 			monster.flags |= MFLAG_ALLOW_SPECIAL;
 		} else if (monster.var2 == 15) {
@@ -1381,12 +1388,6 @@ bool MonsterFadeout(Monster &monster)
  */
 void MonsterHeal(Monster &monster)
 {
-	if ((monster.flags & MFLAG_NOHEAL) != 0) {
-		monster.flags &= ~MFLAG_ALLOW_SPECIAL;
-		monster.mode = MonsterMode::SpecialMeleeAttack;
-		return;
-	}
-
 	if (monster.animInfo.currentFrame == 0) {
 		monster.flags &= ~MFLAG_LOCK_ANIMATION;
 		monster.flags |= MFLAG_ALLOW_SPECIAL;
@@ -1407,24 +1408,6 @@ void MonsterTalk(Monster &monster)
 	if (effect_is_playing(Speeches[monster.talkMsg].sfxnr))
 		return;
 	InitQTextMsg(monster.talkMsg);
-	if (monster.uniqueType == UniqueMonsterType::Garbud) {
-		if (monster.talkMsg == TEXT_GARBUD1) {
-			Quests[Q_GARBUD]._qactive = QUEST_ACTIVE;
-			Quests[Q_GARBUD]._qlog = true; // BUGFIX: (?) for other quests qactive and qlog go together, maybe this should actually go into the if above (fixed)
-		}
-		if (monster.talkMsg == TEXT_GARBUD2 && (monster.flags & MFLAG_QUEST_COMPLETE) == 0) {
-			SpawnItem(monster, monster.position.tile + Displacement { 1, 1 }, true);
-			monster.flags |= MFLAG_QUEST_COMPLETE;
-		}
-	}
-	if (monster.uniqueType == UniqueMonsterType::Zhar
-	    && monster.talkMsg == TEXT_ZHAR1
-	    && (monster.flags & MFLAG_QUEST_COMPLETE) == 0) {
-		Quests[Q_ZHAR]._qactive = QUEST_ACTIVE;
-		Quests[Q_ZHAR]._qlog = true;
-		CreateTypeItem(monster.position.tile + Displacement { 1, 1 }, false, ItemType::Misc, IMISC_BOOK, true, false);
-		monster.flags |= MFLAG_QUEST_COMPLETE;
-	}
 	if (monster.uniqueType == UniqueMonsterType::SnotSpill) {
 		if (monster.talkMsg == TEXT_BANNER10 && (monster.flags & MFLAG_QUEST_COMPLETE) == 0) {
 			ObjChangeMap(SetPiece.position.x, SetPiece.position.y, SetPiece.position.x + (SetPiece.size.width / 2) + 2, SetPiece.position.y + (SetPiece.size.height / 2) - 2);
@@ -1446,14 +1429,13 @@ void MonsterTalk(Monster &monster)
 		if (monster.talkMsg == TEXT_VEIL9) {
 			Quests[Q_VEIL]._qactive = QUEST_ACTIVE;
 			Quests[Q_VEIL]._qlog = true;
-		}
-		if (monster.talkMsg == TEXT_VEIL11 && (monster.flags & MFLAG_QUEST_COMPLETE) == 0) {
-			SpawnUnique(UITEM_STEELVEIL, monster.position.tile + Direction::South);
-			monster.flags |= MFLAG_QUEST_COMPLETE;
+			NetSendCmdQuest(true, Quests[Q_VEIL]);
 		}
 	}
-	if (monster.uniqueType == UniqueMonsterType::WarlordOfBlood)
-		Quests[Q_WARLORD]._qvar1 = 2;
+	if (monster.uniqueType == UniqueMonsterType::WarlordOfBlood) {
+		Quests[Q_WARLORD]._qvar1 = QS_WARLORD_TALKING;
+		NetSendCmdQuest(true, Quests[Q_WARLORD]);
+	}
 	if (monster.uniqueType == UniqueMonsterType::Lazarus && UseMultiplayerQuests()) {
 		Quests[Q_BETRAYER]._qvar1 = 6;
 		monster.goal = MonsterGoal::Normal;
@@ -1537,7 +1519,7 @@ bool MonsterSpecialStand(Monster &monster)
 bool MonsterDelay(Monster &monster)
 {
 	monster.changeAnimationData(MonsterGraphic::Stand, GetMonsterDirection(monster));
-	if (monster.ai == AI_LAZARUS) {
+	if (monster.ai == MonsterAIID::Lazarus) {
 		if (monster.var2 > 8 || monster.var2 < 0)
 			monster.var2 = 8;
 	}
@@ -1634,7 +1616,7 @@ void GroupUnity(Monster &monster)
 			leader.position.last = monster.position.tile;
 			leader.activeForTicks = monster.activeForTicks - 1;
 		}
-		if (leader.ai == AI_GARG && (leader.flags & MFLAG_ALLOW_SPECIAL) != 0) {
+		if (leader.ai == MonsterAIID::Gargoyle && (leader.flags & MFLAG_ALLOW_SPECIAL) != 0) {
 			leader.flags &= ~MFLAG_ALLOW_SPECIAL;
 			leader.mode = MonsterMode::SpecialMeleeAttack;
 		}
@@ -1840,7 +1822,7 @@ void AiAvoidance(Monster &monster)
 			}
 		} else if (v < 2 * monster.intelligence + 23) {
 			monster.direction = md;
-			if (IsAnyOf(monster.ai, AI_GOATMC, AI_GARBUD) && monster.hitPoints < (monster.maxHitPoints / 2) && !FlipCoin())
+			if (IsAnyOf(monster.ai, MonsterAIID::GoatMelee, MonsterAIID::Gharbad) && monster.hitPoints < (monster.maxHitPoints / 2) && !FlipCoin())
 				StartSpecialAttack(monster);
 			else
 				StartAttack(monster);
@@ -1850,39 +1832,39 @@ void AiAvoidance(Monster &monster)
 	monster.checkStandAnimationIsLoaded(md);
 }
 
-missile_id GetMissileType(_mai_id ai)
+MissileID GetMissileType(MonsterAIID ai)
 {
 	switch (ai) {
-	case AI_GOATMC:
-		return MIS_ARROW;
-	case AI_SUCC:
-	case AI_LAZHELP:
-		return MIS_FLARE;
-	case AI_ACID:
-	case AI_ACIDUNIQ:
-		return MIS_ACID;
-	case AI_FIREBAT:
-		return MIS_FIREBOLT;
-	case AI_TORCHANT:
-		return MIS_FIREBALL;
-	case AI_LICH:
-		return MIS_LICH;
-	case AI_ARCHLICH:
-		return MIS_ARCHLICH;
-	case AI_PSYCHORB:
-		return MIS_PSYCHORB;
-	case AI_NECROMORB:
-		return MIS_NECROMORB;
-	case AI_MAGMA:
-		return MIS_MAGMABALL;
-	case AI_STORM:
-		return MIS_LIGHTCTRL2;
-	case AI_DIABLO:
-		return MIS_DIABAPOCA;
-	case AI_BONEDEMON:
-		return MIS_BONEDEMON;
+	case MonsterAIID::GoatMelee:
+		return MissileID::Arrow;
+	case MonsterAIID::Succubus:
+	case MonsterAIID::LazarusSuccubus:
+		return MissileID::BloodStar;
+	case MonsterAIID::Acid:
+	case MonsterAIID::AcidUnique:
+		return MissileID::Acid;
+	case MonsterAIID::FireBat:
+		return MissileID::Firebolt;
+	case MonsterAIID::Torchant:
+		return MissileID::Fireball;
+	case MonsterAIID::Lich:
+		return MissileID::OrangeFlare;
+	case MonsterAIID::ArchLich:
+		return MissileID::YellowFlare;
+	case MonsterAIID::Psychorb:
+		return MissileID::BlueFlare;
+	case MonsterAIID::Necromorb:
+		return MissileID::RedFlare;
+	case MonsterAIID::Magma:
+		return MissileID::MagmaBall;
+	case MonsterAIID::Storm:
+		return MissileID::ThinLightningControl;
+	case MonsterAIID::Diablo:
+		return MissileID::DiabloApocalypse;
+	case MonsterAIID::BoneDemon:
+		return MissileID::BlueFlare2;
 	default:
-		return MIS_ARROW;
+		return MissileID::Arrow;
 	}
 }
 
@@ -1905,11 +1887,11 @@ void AiRanged(Monster &monster)
 		}
 		if (monster.mode == MonsterMode::Stand) {
 			if (LineClearMissile(monster.position.tile, monster.enemyPosition)) {
-				missile_id missileType = GetMissileType(monster.ai);
-				if (monster.ai == AI_ACIDUNIQ)
-					StartRangedSpecialAttack(monster, missileType, 4);
+				MissileID missileType = GetMissileType(monster.ai);
+				if (monster.ai == MonsterAIID::AcidUnique)
+					StartRangedSpecialAttack(monster, missileType, 0);
 				else
-					StartRangedAttack(monster, missileType, 4);
+					StartRangedAttack(monster, missileType, 0);
 			} else {
 				monster.checkStandAnimationIsLoaded(md);
 			}
@@ -1930,11 +1912,11 @@ void AiRangedAvoidance(Monster &monster)
 	}
 
 	Direction md = GetDirection(monster.position.tile, monster.position.last);
-	if (IsAnyOf(monster.ai, AI_MAGMA, AI_STORM, AI_BONEDEMON) && monster.activeForTicks < UINT8_MAX)
+	if (IsAnyOf(monster.ai, MonsterAIID::Magma, MonsterAIID::Storm, MonsterAIID::BoneDemon) && monster.activeForTicks < UINT8_MAX)
 		MonstCheckDoors(monster);
-	int lessmissiles = (monster.ai == AI_ACID) ? 1 : 0;
-	int dam = (monster.ai == AI_DIABLO) ? 40 : 4;
-	missile_id missileType = GetMissileType(monster.ai);
+	int lessmissiles = (monster.ai == MonsterAIID::Acid) ? 1 : 0;
+	int dam = (monster.ai == MonsterAIID::Diablo) ? 40 : 0;
+	MissileID missileType = GetMissileType(monster.ai);
 	int v = GenerateRnd(10000);
 	unsigned distanceToEnemy = monster.distanceToEnemy();
 	if (distanceToEnemy >= 2 && monster.activeForTicks == UINT8_MAX && dTransVal[monster.position.tile.x][monster.position.tile.y] == dTransVal[monster.enemyPosition.x][monster.enemyPosition.y]) {
@@ -2083,7 +2065,7 @@ void SkeletonBowAi(Monster &monster)
 	if (!walking) {
 		if (GenerateRnd(100) < 2 * monster.intelligence + 3) {
 			if (LineClearMissile(monster.position.tile, monster.enemyPosition))
-				StartRangedAttack(monster, MIS_ARROW, 4);
+				StartRangedAttack(monster, MissileID::Arrow, 4);
 		}
 	}
 
@@ -2100,7 +2082,6 @@ std::optional<Point> ScavengerFindCorpse(const Monster &scavenger)
 	for (int y = first; y <= last; y += increment) {
 		for (int x = first; x <= last; x += increment) {
 			Point position = scavenger.position.tile + Displacement { x, y };
-			// BUGFIX: incorrect check of offset against limits of the dungeon (fixed)
 			if (!InDungeonBounds(position))
 				continue;
 			if (dCorpse[position.x][position.y] == 0)
@@ -2129,17 +2110,15 @@ void ScavengerAi(Monster &monster)
 		monster.goalVar3--;
 		if (dCorpse[monster.position.tile.x][monster.position.tile.y] != 0) {
 			StartEating(monster);
-			if ((monster.flags & MFLAG_NOHEAL) == 0) {
-				if (gbIsHellfire) {
-					int mMaxHP = monster.maxHitPoints; // BUGFIX use hitPointsMaximum or we loose health when difficulty isn't normal (fixed)
-					monster.hitPoints += mMaxHP / 8;
-					if (monster.hitPoints > monster.maxHitPoints)
-						monster.hitPoints = monster.maxHitPoints;
-					if (monster.goalVar3 <= 0 || monster.hitPoints == monster.maxHitPoints)
-						dCorpse[monster.position.tile.x][monster.position.tile.y] = 0;
-				} else {
-					monster.hitPoints += 64;
-				}
+			if (gbIsHellfire) {
+				int mMaxHP = monster.maxHitPoints;
+				monster.hitPoints += mMaxHP / 8;
+				if (monster.hitPoints > monster.maxHitPoints)
+					monster.hitPoints = monster.maxHitPoints;
+				if (monster.goalVar3 <= 0 || monster.hitPoints == monster.maxHitPoints)
+					dCorpse[monster.position.tile.x][monster.position.tile.y] = 0;
+			} else {
+				monster.hitPoints += 64;
 			}
 			int targetHealth = monster.maxHitPoints;
 			if (!gbIsHellfire)
@@ -2202,7 +2181,7 @@ void RhinoAi(Monster &monster)
 		    && v < 2 * monster.intelligence + 43
 		    && LineClear([&monster](Point position) { return IsTileAvailable(monster, position); }, monster.position.tile, monster.enemyPosition)) {
 			size_t monsterId = monster.getId();
-			if (AddMissile(monster.position.tile, monster.enemyPosition, md, MIS_RHINO, TARGET_PLAYERS, monsterId, 0, 0) != nullptr) {
+			if (AddMissile(monster.position.tile, monster.enemyPosition, md, MissileID::Rhino, TARGET_PLAYERS, monsterId, 0, 0) != nullptr) {
 				if (monster.data().hasSpecialSound)
 					PlayEffect(monster, MonsterSound::Special);
 				dMonster[monster.position.tile.x][monster.position.tile.y] = -(monsterId + 1);
@@ -2252,13 +2231,11 @@ void FallenAi(Monster &monster)
 		if (!FlipCoin(4)) {
 			return;
 		}
-		if ((monster.flags & MFLAG_NOHEAL) == 0) {
-			StartSpecialStand(monster, monster.direction);
-			if (monster.maxHitPoints - (2 * monster.intelligence + 2) >= monster.hitPoints)
-				monster.hitPoints += 2 * monster.intelligence + 2;
-			else
-				monster.hitPoints = monster.maxHitPoints;
-		}
+		StartSpecialStand(monster, monster.direction);
+		if (monster.maxHitPoints - (2 * monster.intelligence + 2) >= monster.hitPoints)
+			monster.hitPoints += 2 * monster.intelligence + 2;
+		else
+			monster.hitPoints = monster.maxHitPoints;
 		int rad = 2 * monster.intelligence + 4;
 		for (int y = -rad; y <= rad; y++) {
 			for (int x = -rad; x <= rad; x++) {
@@ -2270,7 +2247,7 @@ void FallenAi(Monster &monster)
 						continue;
 
 					auto &otherMonster = Monsters[m - 1];
-					if (otherMonster.ai != AI_FALLEN)
+					if (otherMonster.ai != MonsterAIID::Fallen)
 						continue;
 
 					otherMonster.goal = MonsterGoal::Attack;
@@ -2371,7 +2348,7 @@ void BatAi(Monster &monster)
 	    && v < 4 * monster.intelligence + 33
 	    && LineClear([&monster](Point position) { return IsTileAvailable(monster, position); }, monster.position.tile, monster.enemyPosition)) {
 		size_t monsterId = monster.getId();
-		if (AddMissile(monster.position.tile, monster.enemyPosition, md, MIS_RHINO, TARGET_PLAYERS, monsterId, 0, 0) != nullptr) {
+		if (AddMissile(monster.position.tile, monster.enemyPosition, md, MissileID::Rhino, TARGET_PLAYERS, monsterId, 0, 0) != nullptr) {
 			dMonster[monster.position.tile.x][monster.position.tile.y] = -(monsterId + 1);
 			monster.mode = MonsterMode::Charge;
 		}
@@ -2387,7 +2364,7 @@ void BatAi(Monster &monster)
 		monster.goal = MonsterGoal::Retreat;
 		monster.goalVar1 = 0;
 		if (monster.type().type == MT_FAMILIAR) {
-			AddMissile(monster.enemyPosition, { monster.enemyPosition.x + 1, 0 }, Direction::South, MIS_LIGHTNING, TARGET_PLAYERS, monster.getId(), GenerateRnd(10) + 1, 0);
+			AddMissile(monster.enemyPosition, { monster.enemyPosition.x + 1, 0 }, Direction::South, MissileID::Lightning, TARGET_PLAYERS, monster.getId(), GenerateRnd(10) + 1, 0);
 		}
 	}
 
@@ -2411,8 +2388,7 @@ void GargoyleAi(Monster &monster)
 	}
 
 	if (monster.hitPoints < (monster.maxHitPoints / 2))
-		if ((monster.flags & MFLAG_NOHEAL) == 0)
-			monster.goal = MonsterGoal::Retreat;
+		monster.goal = MonsterGoal::Retreat;
 	if (monster.goal == MonsterGoal::Retreat) {
 		if (distanceToEnemy >= monster.intelligence + 2u) {
 			monster.goal = MonsterGoal::Normal;
@@ -2512,12 +2488,18 @@ void GharbadAi(Monster &monster)
 		switch (monster.talkMsg) {
 		case TEXT_GARBUD1:
 			monster.talkMsg = TEXT_GARBUD2;
+			Quests[Q_GARBUD]._qvar1 = QS_GHARBAD_FIRST_ITEM_READY;
+			NetSendCmdQuest(true, Quests[Q_GARBUD]);
 			break;
 		case TEXT_GARBUD2:
 			monster.talkMsg = TEXT_GARBUD3;
+			Quests[Q_GARBUD]._qvar1 = QS_GHARBAD_SECOND_ITEM_NEARLY_DONE;
+			NetSendCmdQuest(true, Quests[Q_GARBUD]);
 			break;
 		case TEXT_GARBUD3:
 			monster.talkMsg = TEXT_GARBUD4;
+			Quests[Q_GARBUD]._qvar1 = QS_GHARBAD_SECOND_ITEM_READY;
+			NetSendCmdQuest(true, Quests[Q_GARBUD]);
 			break;
 		default:
 			break;
@@ -2530,6 +2512,8 @@ void GharbadAi(Monster &monster)
 				monster.goal = MonsterGoal::Normal;
 				monster.activeForTicks = UINT8_MAX;
 				monster.talkMsg = TEXT_NONE;
+				Quests[Q_GARBUD]._qvar1 = QS_GHARBAD_ATTACKING;
+				NetSendCmdQuest(true, Quests[Q_GARBUD]);
 			}
 		}
 	}
@@ -2590,7 +2574,7 @@ void SnakeAi(Monster &monster)
 	if (distanceToEnemy >= 2) {
 		if (distanceToEnemy < 3 && LineClear([&monster](Point position) { return IsTileAvailable(monster, position); }, monster.position.tile, monster.enemyPosition) && static_cast<MonsterMode>(monster.var1) != MonsterMode::Charge) {
 			size_t monsterId = monster.getId();
-			if (AddMissile(monster.position.tile, monster.enemyPosition, md, MIS_RHINO, TARGET_PLAYERS, monsterId, 0, 0) != nullptr) {
+			if (AddMissile(monster.position.tile, monster.enemyPosition, md, MissileID::Rhino, TARGET_PLAYERS, monsterId, 0, 0) != nullptr) {
 				PlayEffect(monster, MonsterSound::Attack);
 				dMonster[monster.position.tile.x][monster.position.tile.y] = -(monsterId + 1);
 				monster.mode = MonsterMode::Charge;
@@ -2666,7 +2650,7 @@ void CounselorAi(Monster &monster)
 	} else if (monster.goal == MonsterGoal::Normal) {
 		if (distanceToEnemy >= 2) {
 			if (v < 5 * (monster.intelligence + 10) && LineClearMissile(monster.position.tile, monster.enemyPosition)) {
-				constexpr missile_id MissileTypes[4] = { MIS_FIREBOLT, MIS_CBOLT, MIS_LIGHTCTRL, MIS_FIREBALL };
+				constexpr MissileID MissileTypes[4] = { MissileID::Firebolt, MissileID::ChargedBolt, MissileID::LightningControl, MissileID::Fireball };
 				StartRangedAttack(monster, MissileTypes[monster.intelligence], monster.minDamage + GenerateRnd(monster.maxDamage - monster.minDamage + 1));
 			} else if (GenerateRnd(100) < 30) {
 				monster.goal = MonsterGoal::Move;
@@ -2682,10 +2666,10 @@ void CounselorAi(Monster &monster)
 				StartFadeout(monster, md, false);
 			} else if (static_cast<MonsterMode>(monster.var1) == MonsterMode::Delay
 			    || GenerateRnd(100) < 2 * monster.intelligence + 20) {
-				StartRangedAttack(monster, MIS_NULL, 0);
+				StartRangedAttack(monster, MissileID::Null, 0);
 				size_t monsterId = monster.getId();
-				AddMissile(monster.position.tile, { 0, 0 }, monster.direction, MIS_FLASH, TARGET_PLAYERS, monsterId, 4, 0);
-				AddMissile(monster.position.tile, { 0, 0 }, monster.direction, MIS_FLASH2, TARGET_PLAYERS, monsterId, 4, 0);
+				AddMissile(monster.position.tile, { 0, 0 }, monster.direction, MissileID::FlashBottom, TARGET_PLAYERS, monsterId, 4, 0);
+				AddMissile(monster.position.tile, { 0, 0 }, monster.direction, MissileID::FlashTop, TARGET_PLAYERS, monsterId, 4, 0);
 			} else
 				AiDelay(monster, GenerateRnd(10) + 2 * (5 - monster.intelligence));
 		}
@@ -2705,6 +2689,8 @@ void ZharAi(Monster &monster)
 	if (monster.talkMsg == TEXT_ZHAR1 && !IsTileVisible(monster.position.tile) && monster.goal == MonsterGoal::Talking) {
 		monster.talkMsg = TEXT_ZHAR2;
 		monster.goal = MonsterGoal::Inquiring;
+		Quests[Q_ZHAR]._qvar1 = QS_ZHAR_ANGRY;
+		NetSendCmdQuest(true, Quests[Q_ZHAR]);
 	}
 
 	if (IsTileVisible(monster.position.tile)) {
@@ -2713,6 +2699,8 @@ void ZharAi(Monster &monster)
 				monster.activeForTicks = UINT8_MAX;
 				monster.talkMsg = TEXT_NONE;
 				monster.goal = MonsterGoal::Normal;
+				Quests[Q_ZHAR]._qvar1 = QS_ZHAR_ATTACKING;
+				NetSendCmdQuest(true, Quests[Q_ZHAR]);
 			}
 		}
 	}
@@ -2758,7 +2746,7 @@ void MegaAi(Monster &monster)
 	}
 	if (monster.goal == MonsterGoal::Normal) {
 		if (((distanceToEnemy >= 3 && v < 5 * (monster.intelligence + 2)) || v < 5 * (monster.intelligence + 1) || monster.goalVar3 == 4) && LineClearMissile(monster.position.tile, monster.enemyPosition)) {
-			StartRangedSpecialAttack(monster, MIS_FLAMEC, 0);
+			StartRangedSpecialAttack(monster, MissileID::InfernoControl, 0);
 		} else if (distanceToEnemy >= 2) {
 			v = GenerateRnd(100);
 			if (v < 2 * (5 * monster.intelligence + 25)
@@ -2771,7 +2759,7 @@ void MegaAi(Monster &monster)
 			if (GenerateRnd(100) < 10 * (monster.intelligence + 4)) {
 				monster.direction = md;
 				if (FlipCoin())
-					StartRangedSpecialAttack(monster, MIS_FLAMEC, 0);
+					StartRangedSpecialAttack(monster, MissileID::InfernoControl, 0);
 				else
 					StartAttack(monster);
 			}
@@ -2867,6 +2855,8 @@ void LachdananAi(Monster &monster)
 	if (monster.talkMsg == TEXT_VEIL9 && !IsTileVisible(monster.position.tile) && monster.goal == MonsterGoal::Talking) {
 		monster.talkMsg = TEXT_VEIL10;
 		monster.goal = MonsterGoal::Inquiring;
+		Quests[Q_VEIL]._qvar2 = QS_VEIL_EARLY_RETURN;
+		NetSendCmdQuest(true, Quests[Q_VEIL]);
 	}
 
 	if (IsTileVisible(monster.position.tile)) {
@@ -2874,7 +2864,10 @@ void LachdananAi(Monster &monster)
 			if (!effect_is_playing(USFX_LACH3) && monster.goal == MonsterGoal::Talking) {
 				monster.talkMsg = TEXT_NONE;
 				Quests[Q_VEIL]._qactive = QUEST_DONE;
+				NetSendCmdQuest(true, Quests[Q_VEIL]);
 				MonsterDeath(monster, monster.direction, true);
+				delta_kill_monster(monster, monster.position.tile, *MyPlayer);
+				NetSendCmdLocParam1(false, CMD_MONSTDEATH, monster.position.tile, monster.getId());
 			}
 		}
 	}
@@ -2896,6 +2889,8 @@ void WarlordAi(Monster &monster)
 			monster.activeForTicks = UINT8_MAX;
 			monster.talkMsg = TEXT_NONE;
 			monster.goal = MonsterGoal::Normal;
+			Quests[Q_WARLORD]._qvar1 = QS_WARLORD_ATTACKING;
+			NetSendCmdQuest(true, Quests[Q_WARLORD]);
 		}
 	}
 
@@ -2939,7 +2934,7 @@ void HorkDemonAi(Monster &monster)
 		if ((distanceToEnemy >= 3) && v < 2 * monster.intelligence + 43) {
 			Point position = monster.position.tile + monster.direction;
 			if (IsTileAvailable(monster, position) && ActiveMonsterCount < MaxMonsters) {
-				StartRangedSpecialAttack(monster, MIS_HORKDMN, 0);
+				StartRangedSpecialAttack(monster, MissileID::HorkSpawn, 0);
 			}
 		} else if (distanceToEnemy < 2) {
 			if (v < 2 * monster.intelligence + 28) {
@@ -2987,46 +2982,46 @@ void ActivateSpawn(Monster &monster, Point position, Direction dir)
 
 /** Maps from monster AI ID to monster AI function. */
 void (*AiProc[])(Monster &monster) = {
-	/*AI_ZOMBIE   */ &ZombieAi,
-	/*AI_FAT      */ &OverlordAi,
-	/*AI_SKELSD   */ &SkeletonAi,
-	/*AI_SKELBOW  */ &SkeletonBowAi,
-	/*AI_SCAV     */ &ScavengerAi,
-	/*AI_RHINO    */ &RhinoAi,
-	/*AI_GOATMC   */ &AiAvoidance,
-	/*AI_GOATBOW  */ &AiRanged,
-	/*AI_FALLEN   */ &FallenAi,
-	/*AI_MAGMA    */ &AiRangedAvoidance,
-	/*AI_SKELKING */ &LeoricAi,
-	/*AI_BAT      */ &BatAi,
-	/*AI_GARG     */ &GargoyleAi,
-	/*AI_CLEAVER  */ &ButcherAi,
-	/*AI_SUCC     */ &AiRanged,
-	/*AI_SNEAK    */ &SneakAi,
-	/*AI_STORM    */ &AiRangedAvoidance,
-	/*AI_FIREMAN  */ nullptr,
-	/*AI_GARBUD   */ &GharbadAi,
-	/*AI_ACID     */ &AiRangedAvoidance,
-	/*AI_ACIDUNIQ */ &AiRanged,
-	/*AI_GOLUM    */ &GolumAi,
-	/*AI_ZHAR     */ &ZharAi,
-	/*AI_SNOTSPIL */ &SnotSpilAi,
-	/*AI_SNAKE    */ &SnakeAi,
-	/*AI_COUNSLR  */ &CounselorAi,
-	/*AI_MEGA     */ &MegaAi,
-	/*AI_DIABLO   */ &AiRangedAvoidance,
-	/*AI_LAZARUS  */ &LazarusAi,
-	/*AI_LAZHELP  */ &LazarusMinionAi,
-	/*AI_LACHDAN  */ &LachdananAi,
-	/*AI_WARLORD  */ &WarlordAi,
-	/*AI_FIREBAT  */ &AiRanged,
-	/*AI_TORCHANT */ &AiRanged,
-	/*AI_HORKDMN  */ &HorkDemonAi,
-	/*AI_LICH     */ &AiRanged,
-	/*AI_ARCHLICH */ &AiRanged,
-	/*AI_PSYCHORB */ &AiRanged,
-	/*AI_NECROMORB*/ &AiRanged,
-	/*AI_BONEDEMON*/ &AiRangedAvoidance
+	/*MonsterAIID::Zombie   */ &ZombieAi,
+	/*MonsterAIID::Fat      */ &OverlordAi,
+	/*MonsterAIID::SkeletonMelee   */ &SkeletonAi,
+	/*MonsterAIID::SkeletonRanged  */ &SkeletonBowAi,
+	/*MonsterAIID::Scavenger     */ &ScavengerAi,
+	/*MonsterAIID::Rhino    */ &RhinoAi,
+	/*MonsterAIID::GoatMelee   */ &AiAvoidance,
+	/*MonsterAIID::GoatRanged  */ &AiRanged,
+	/*MonsterAIID::Fallen   */ &FallenAi,
+	/*MonsterAIID::Magma    */ &AiRangedAvoidance,
+	/*MonsterAIID::SkeletonKing */ &LeoricAi,
+	/*MonsterAIID::Bat      */ &BatAi,
+	/*MonsterAIID::Gargoyle     */ &GargoyleAi,
+	/*MonsterAIID::Butcher  */ &ButcherAi,
+	/*MonsterAIID::Succubus     */ &AiRanged,
+	/*MonsterAIID::Sneak    */ &SneakAi,
+	/*MonsterAIID::Storm    */ &AiRangedAvoidance,
+	/*MonsterAIID::FireMan  */ nullptr,
+	/*MonsterAIID::Gharbad   */ &GharbadAi,
+	/*MonsterAIID::Acid     */ &AiRangedAvoidance,
+	/*MonsterAIID::AcidUnique */ &AiRanged,
+	/*MonsterAIID::Golem    */ &GolumAi,
+	/*MonsterAIID::Zhar     */ &ZharAi,
+	/*MonsterAIID::Snotspill */ &SnotSpilAi,
+	/*MonsterAIID::Snake    */ &SnakeAi,
+	/*MonsterAIID::Counselor  */ &CounselorAi,
+	/*MonsterAIID::Mega     */ &MegaAi,
+	/*MonsterAIID::Diablo   */ &AiRangedAvoidance,
+	/*MonsterAIID::Lazarus  */ &LazarusAi,
+	/*MonsterAIID::LazarusSuccubus  */ &LazarusMinionAi,
+	/*MonsterAIID::Lachdanan  */ &LachdananAi,
+	/*MonsterAIID::Warlord  */ &WarlordAi,
+	/*MonsterAIID::FireBat  */ &AiRanged,
+	/*MonsterAIID::Torchant */ &AiRanged,
+	/*MonsterAIID::HorkDemon  */ &HorkDemonAi,
+	/*MonsterAIID::Lich     */ &AiRanged,
+	/*MonsterAIID::ArchLich */ &AiRanged,
+	/*MonsterAIID::Psychorb */ &AiRanged,
+	/*MonsterAIID::Necromorb*/ &AiRanged,
+	/*MonsterAIID::BoneDemon*/ &AiRangedAvoidance
 };
 
 bool IsRelativeMoveOK(const Monster &monster, Point position, Direction mdir)
@@ -3132,14 +3127,14 @@ void PrepareUniqueMonst(Monster &monster, UniqueMonsterType monsterType, size_t 
 	monster.resistance = uniqueMonsterData.mMagicRes;
 	monster.talkMsg = uniqueMonsterData.mtalkmsg;
 	if (monsterType == UniqueMonsterType::HorkDemon)
-		monster.lightId = NO_LIGHT; // BUGFIX monsters initial light id should be -1 (fixed)
+		monster.lightId = NO_LIGHT;
 	else
 		monster.lightId = AddLight(monster.position.tile, 3);
 
 	if (UseMultiplayerQuests()) {
-		if (monster.ai == AI_LAZHELP)
+		if (monster.ai == MonsterAIID::LazarusSuccubus)
 			monster.talkMsg = TEXT_NONE;
-		if (monster.ai == AI_LAZARUS && Quests[Q_BETRAYER]._qvar1 > 3) {
+		if (monster.ai == MonsterAIID::Lazarus && Quests[Q_BETRAYER]._qvar1 > 3) {
 			monster.goal = MonsterGoal::Normal;
 		} else if (monster.talkMsg != TEXT_NONE) {
 			monster.goal = MonsterGoal::Inquiring;
@@ -3153,7 +3148,7 @@ void PrepareUniqueMonst(Monster &monster, UniqueMonsterType monsterType, size_t 
 		if (gbIsHellfire)
 			monster.maxHitPoints += (gbIsMultiplayer ? 100 : 50) << 6;
 		else
-			monster.maxHitPoints += 64;
+			monster.maxHitPoints += 100 << 6;
 		monster.hitPoints = monster.maxHitPoints;
 		monster.minDamage = 2 * (monster.minDamage + 2);
 		monster.maxDamage = 2 * (monster.maxDamage + 2);
@@ -3164,7 +3159,7 @@ void PrepareUniqueMonst(Monster &monster, UniqueMonsterType monsterType, size_t 
 		if (gbIsHellfire)
 			monster.maxHitPoints += (gbIsMultiplayer ? 200 : 100) << 6;
 		else
-			monster.maxHitPoints += 192;
+			monster.maxHitPoints += 200 << 6;
 		monster.hitPoints = monster.maxHitPoints;
 		monster.minDamage = 4 * monster.minDamage + 6;
 		monster.maxDamage = 4 * monster.maxDamage + 6;
@@ -3198,7 +3193,7 @@ void PrepareUniqueMonst(Monster &monster, UniqueMonsterType monsterType, size_t 
 		PlaceGroup(minionType, bosspacksize, &monster, uniqueMonsterData.monsterPack == UniqueMonsterPack::Leashed);
 	}
 
-	if (monster.ai != AI_GARG) {
+	if (monster.ai != MonsterAIID::Gargoyle) {
 		monster.changeAnimationData(MonsterGraphic::Stand);
 		monster.animInfo.currentFrame = GenerateRnd(monster.animInfo.numberOfFrames - 1);
 		monster.flags &= ~MFLAG_ALLOW_SPECIAL;
@@ -3357,6 +3352,32 @@ void InitMonsterGFX(CMonster &monsterType)
 		    hasAnim);
 	}
 
+#ifndef UNPACKED_MPQS
+	if (!HeadlessMode) {
+		// Convert CL2 to CLX:
+		std::vector<std::vector<uint8_t>> clxData;
+		size_t accumulatedSize = 0;
+		for (size_t i = 0, j = 0; i < numAnims; ++i) {
+			if (!hasAnim(i))
+				continue;
+			const uint32_t begin = animOffsets[j];
+			const uint32_t end = animOffsets[j + 1];
+			clxData.emplace_back();
+			Cl2ToClx(reinterpret_cast<uint8_t *>(&monsterType.animData[begin]), end - begin,
+			    PointerOrValue<uint16_t> { monsterData.width }, clxData.back());
+			animOffsets[j] = accumulatedSize;
+			accumulatedSize += clxData.back().size();
+			++j;
+		}
+		animOffsets[clxData.size()] = accumulatedSize;
+		monsterType.animData = nullptr;
+		monsterType.animData = std::unique_ptr<byte[]>(new byte[accumulatedSize]);
+		for (size_t i = 0; i < clxData.size(); ++i) {
+			memcpy(&monsterType.animData[animOffsets[i]], clxData[i].data(), clxData[i].size());
+		}
+	}
+#endif
+
 	for (size_t i = 0, j = 0; i < numAnims; ++i) {
 		AnimStruct &anim = monsterType.anims[i];
 		if (!hasAnim(i)) {
@@ -3370,7 +3391,7 @@ void InitMonsterGFX(CMonster &monsterType)
 			const uint32_t begin = animOffsets[j];
 			const uint32_t end = animOffsets[j + 1];
 			auto spritesData = reinterpret_cast<uint8_t *>(&monsterType.animData[begin]);
-			const uint16_t numLists = Cl2ToClx(spritesData, end - begin, PointerOrValue<uint16_t> { monsterData.width });
+			const uint16_t numLists = GetNumListsFromClxListOrSheetBuffer(spritesData, end - begin);
 			anim.sprites = ClxSpriteListOrSheet { spritesData, numLists };
 		}
 		++j;
@@ -3386,46 +3407,46 @@ void InitMonsterGFX(CMonster &monsterType)
 	}
 
 	if (IsAnyOf(mtype, MT_NMAGMA, MT_YMAGMA, MT_BMAGMA, MT_WMAGMA))
-		MissileSpriteData[MFILE_MAGBALL].LoadGFX();
+		GetMissileSpriteData(MissileGraphicID::MagmaBall).LoadGFX();
 	if (IsAnyOf(mtype, MT_STORM, MT_RSTORM, MT_STORML, MT_MAEL))
-		MissileSpriteData[MFILE_THINLGHT].LoadGFX();
+		GetMissileSpriteData(MissileGraphicID::ThinLightning).LoadGFX();
 	if (mtype == MT_SNOWWICH) {
-		MissileSpriteData[MFILE_SCUBMISB].LoadGFX();
-		MissileSpriteData[MFILE_SCBSEXPB].LoadGFX();
+		GetMissileSpriteData(MissileGraphicID::BloodStarBlue).LoadGFX();
+		GetMissileSpriteData(MissileGraphicID::BloodStarBlueExplosion).LoadGFX();
 	}
 	if (mtype == MT_HLSPWN) {
-		MissileSpriteData[MFILE_SCUBMISD].LoadGFX();
-		MissileSpriteData[MFILE_SCBSEXPD].LoadGFX();
+		GetMissileSpriteData(MissileGraphicID::BloodStarRed).LoadGFX();
+		GetMissileSpriteData(MissileGraphicID::BloodStarRedExplosion).LoadGFX();
 	}
 	if (mtype == MT_SOLBRNR) {
-		MissileSpriteData[MFILE_SCUBMISC].LoadGFX();
-		MissileSpriteData[MFILE_SCBSEXPC].LoadGFX();
+		GetMissileSpriteData(MissileGraphicID::BloodStarYellow).LoadGFX();
+		GetMissileSpriteData(MissileGraphicID::BloodStarYellowExplosion).LoadGFX();
 	}
 	if (IsAnyOf(mtype, MT_NACID, MT_RACID, MT_BACID, MT_XACID, MT_SPIDLORD)) {
-		MissileSpriteData[MFILE_ACIDBF].LoadGFX();
-		MissileSpriteData[MFILE_ACIDSPLA].LoadGFX();
-		MissileSpriteData[MFILE_ACIDPUD].LoadGFX();
+		GetMissileSpriteData(MissileGraphicID::Acid).LoadGFX();
+		GetMissileSpriteData(MissileGraphicID::AcidSplat).LoadGFX();
+		GetMissileSpriteData(MissileGraphicID::AcidPuddle).LoadGFX();
 	}
 	if (mtype == MT_LICH) {
-		MissileSpriteData[MFILE_LICH].LoadGFX();
-		MissileSpriteData[MFILE_EXORA1].LoadGFX();
+		GetMissileSpriteData(MissileGraphicID::OrangeFlare).LoadGFX();
+		GetMissileSpriteData(MissileGraphicID::OrangeFlareExplosion).LoadGFX();
 	}
 	if (mtype == MT_ARCHLICH) {
-		MissileSpriteData[MFILE_ARCHLICH].LoadGFX();
-		MissileSpriteData[MFILE_EXYEL2].LoadGFX();
+		GetMissileSpriteData(MissileGraphicID::YellowFlare).LoadGFX();
+		GetMissileSpriteData(MissileGraphicID::YellowFlareExplosion).LoadGFX();
 	}
 	if (IsAnyOf(mtype, MT_PSYCHORB, MT_BONEDEMN))
-		MissileSpriteData[MFILE_BONEDEMON].LoadGFX();
+		GetMissileSpriteData(MissileGraphicID::BlueFlare2).LoadGFX();
 	if (mtype == MT_NECRMORB) {
-		MissileSpriteData[MFILE_NECROMORB].LoadGFX();
-		MissileSpriteData[MFILE_EXRED3].LoadGFX();
+		GetMissileSpriteData(MissileGraphicID::RedFlare).LoadGFX();
+		GetMissileSpriteData(MissileGraphicID::RedFlareExplosion).LoadGFX();
 	}
 	if (mtype == MT_PSYCHORB)
-		MissileSpriteData[MFILE_EXBL2].LoadGFX();
+		GetMissileSpriteData(MissileGraphicID::BlueFlareExplosion).LoadGFX();
 	if (mtype == MT_BONEDEMN)
-		MissileSpriteData[MFILE_EXBL3].LoadGFX();
+		GetMissileSpriteData(MissileGraphicID::BlueFlareExplosion2).LoadGFX();
 	if (mtype == MT_DIABLO)
-		MissileSpriteData[MFILE_FIREPLAR].LoadGFX();
+		GetMissileSpriteData(MissileGraphicID::DiabloApocalypseBoom).LoadGFX();
 }
 
 void WeakenNaKrul()
@@ -3435,7 +3456,6 @@ void WeakenNaKrul()
 
 	auto &monster = Monsters[UberDiabloMonsterIndex];
 	PlayEffect(monster, MonsterSound::Death);
-	Quests[Q_NAKRUL]._qlog = false;
 	monster.armorClass -= 50;
 	int hp = monster.maxHitPoints / 2;
 	monster.resistance = 0;
@@ -3576,8 +3596,10 @@ void AddDoppelganger(Monster &monster)
 	}
 }
 
-void ApplyMonsterDamage(Monster &monster, int damage)
+void ApplyMonsterDamage(DamageType damageType, Monster &monster, int damage)
 {
+	AddFloatingNumber(damageType, monster, damage);
+
 	monster.hitPoints -= damage;
 
 	if (monster.hitPoints >> 6 <= 0) {
@@ -3592,7 +3614,7 @@ void ApplyMonsterDamage(Monster &monster, int damage)
 
 bool M_Talker(const Monster &monster)
 {
-	return IsAnyOf(monster.ai, AI_LAZARUS, AI_WARLORD, AI_GARBUD, AI_ZHAR, AI_SNOTSPIL, AI_LACHDAN, AI_LAZHELP);
+	return IsAnyOf(monster.ai, MonsterAIID::Lazarus, MonsterAIID::Warlord, MonsterAIID::Gharbad, MonsterAIID::Zhar, MonsterAIID::Snotspill, MonsterAIID::Lachdanan, MonsterAIID::LazarusSuccubus);
 }
 
 void M_StartStand(Monster &monster, Direction md)
@@ -3655,7 +3677,9 @@ void M_StartHit(Monster &monster, const Player &player, int dam)
 		monster.enemy = player.getId();
 		monster.enemyPosition = player.position.future;
 		monster.flags &= ~MFLAG_TARGETS_MONSTER;
-		monster.direction = GetMonsterDirection(monster);
+		if (monster.mode != MonsterMode::Petrified) {
+			monster.direction = GetMonsterDirection(monster);
+		}
 	}
 
 	M_StartHit(monster, dam);
@@ -3683,6 +3707,8 @@ void MonsterDeath(Monster &monster, Direction md, bool sendmsg)
 			md = Direction::South;
 		NewMonsterAnim(monster, MonsterGraphic::Death, md, gGameLogicStep < GameLogicStep::ProcessMonsters ? AnimationDistributionFlags::ProcessAnimationPending : AnimationDistributionFlags::None);
 		monster.mode = MonsterMode::Death;
+	} else if (monster.isUnique()) {
+		AddUnLight(monster.lightId);
 	}
 	monster.goal = MonsterGoal::None;
 	monster.var1 = 0;
@@ -3693,7 +3719,7 @@ void MonsterDeath(Monster &monster, Direction md, bool sendmsg)
 	CheckQuestKill(monster, sendmsg);
 	M_FallenFear(monster.position.tile);
 	if (IsAnyOf(monster.type().type, MT_NACID, MT_RACID, MT_BACID, MT_XACID, MT_SPIDLORD))
-		AddMissile(monster.position.tile, { 0, 0 }, Direction::South, MIS_ACIDPUD, TARGET_PLAYERS, monster.getId(), monster.intelligence + 1, 0);
+		AddMissile(monster.position.tile, { 0, 0 }, Direction::South, MissileID::AcidPuddle, TARGET_PLAYERS, monster.getId(), monster.intelligence + 1, 0);
 }
 
 void StartMonsterDeath(Monster &monster, const Player &player, bool sendmsg)
@@ -3874,9 +3900,13 @@ void GolumAi(Monster &golem)
 				enemy.position.last = golem.position.tile;
 				for (int j = 0; j < 5; j++) {
 					for (int k = 0; k < 5; k++) {
-						int enemyId = dMonster[golem.position.tile.x + k - 2][golem.position.tile.y + j - 2]; // BUGFIX: Check if indexes are between 0 and 112
+						int mx = golem.position.tile.x + k - 2;
+						int my = golem.position.tile.y + j - 2;
+						if (!InDungeonBounds({ mx, my }))
+							continue;
+						int enemyId = dMonster[mx][my];
 						if (enemyId > 0)
-							Monsters[enemyId - 1].activeForTicks = UINT8_MAX; // BUGFIX: should be `Monsters[enemy-1]`, not Monsters[enemy]. (fixed)
+							Monsters[enemyId - 1].activeForTicks = UINT8_MAX;
 					}
 				}
 			}
@@ -3939,7 +3969,7 @@ void ProcessMonsters()
 			SetRndSeed(monster.aiSeed);
 			monster.aiSeed = AdvanceRndSeed();
 		}
-		if ((monster.flags & MFLAG_NOHEAL) == 0 && monster.hitPoints < monster.maxHitPoints && monster.hitPoints >> 6 > 0) {
+		if (monster.hitPoints < monster.maxHitPoints && monster.hitPoints >> 6 > 0) {
 			if (monster.level(sgGameInitInfo.nDifficulty) > 1) {
 				monster.hitPoints += monster.level(sgGameInitInfo.nDifficulty) / 2;
 			} else {
@@ -3985,7 +4015,7 @@ void ProcessMonsters()
 		}
 		while (true) {
 			if ((monster.flags & MFLAG_SEARCH) == 0 || !AiPlanPath(monster)) {
-				AiProc[monster.ai](monster);
+				AiProc[static_cast<int8_t>(monster.ai)](monster);
 			}
 
 			if (!UpdateModeStance(monster))
@@ -4144,7 +4174,7 @@ void SyncMonsterAnim(Monster &monster)
 	}
 	MonsterGraphic graphic = MonsterGraphic::Stand;
 
-	switch (monster.mode) {
+	switch (monster.getVisualMonsterMode()) {
 	case MonsterMode::Stand:
 	case MonsterMode::Delay:
 	case MonsterMode::Talk:
@@ -4194,7 +4224,7 @@ void M_FallenFear(Point position)
 		if (m == 0)
 			continue;
 		Monster &monster = Monsters[abs(m) - 1];
-		if (monster.ai != AI_FALLEN || monster.hitPoints >> 6 <= 0)
+		if (monster.ai != MonsterAIID::Fallen || monster.hitPoints >> 6 <= 0)
 			continue;
 
 		int runDistance = std::max((8 - monster.data().level), 2);
@@ -4228,8 +4258,8 @@ void PrintMonstHistory(int mt)
 		if (maxHP < 1)
 			maxHP = 1;
 
-		int hpBonusNightmare = 1;
-		int hpBonusHell = 3;
+		int hpBonusNightmare = 100;
+		int hpBonusHell = 200;
 		if (gbIsHellfire) {
 			hpBonusNightmare = (!gbIsMultiplayer ? 50 : 100);
 			hpBonusHell = (!gbIsMultiplayer ? 100 : 200);
@@ -4476,12 +4506,11 @@ Monster *PreSpawnSkeleton()
 
 void TalktoMonster(Player &player, Monster &monster)
 {
-	monster.mode = MonsterMode::Talk;
-	if (monster.ai != AI_SNOTSPIL && monster.ai != AI_LACHDAN) {
-		return;
-	}
+	if (&player == MyPlayer)
+		monster.mode = MonsterMode::Talk;
 
-	if (Quests[Q_LTBANNER].IsAvailable() && Quests[Q_LTBANNER]._qvar1 == 2) {
+	if (monster.uniqueType == UniqueMonsterType::SnotSpill
+	    && Quests[Q_LTBANNER].IsAvailable() && Quests[Q_LTBANNER]._qvar1 == 2) {
 		if (RemoveInventoryItemById(player, IDI_BANNER)) {
 			Quests[Q_LTBANNER]._qactive = QUEST_DONE;
 			monster.talkMsg = TEXT_BANNER12;
@@ -4489,10 +4518,43 @@ void TalktoMonster(Player &player, Monster &monster)
 			NetSendCmdQuest(true, Quests[Q_LTBANNER]);
 		}
 	}
-	if (Quests[Q_VEIL].IsAvailable() && monster.talkMsg >= TEXT_VEIL9) {
-		if (RemoveInventoryItemById(player, IDI_GLDNELIX)) {
+	if (monster.uniqueType == UniqueMonsterType::Lachdan
+	    && Quests[Q_VEIL].IsAvailable() && monster.talkMsg >= TEXT_VEIL9) {
+		if (RemoveInventoryItemById(player, IDI_GLDNELIX) && (monster.flags & MFLAG_QUEST_COMPLETE) == 0) {
 			monster.talkMsg = TEXT_VEIL11;
 			monster.goal = MonsterGoal::Inquiring;
+			monster.flags |= MFLAG_QUEST_COMPLETE;
+			if (MyPlayer == &player) {
+				SpawnUnique(UITEM_STEELVEIL, monster.position.tile + Direction::South);
+				Quests[Q_VEIL]._qvar2 = QS_VEIL_ITEM_SPAWNED;
+				NetSendCmdQuest(true, Quests[Q_VEIL]);
+			}
+		}
+	}
+	if (monster.uniqueType == UniqueMonsterType::Zhar
+	    && monster.talkMsg == TEXT_ZHAR1
+	    && (monster.flags & MFLAG_QUEST_COMPLETE) == 0) {
+		if (MyPlayer == &player) {
+			Quests[Q_ZHAR]._qactive = QUEST_ACTIVE;
+			Quests[Q_ZHAR]._qlog = true;
+			Quests[Q_ZHAR]._qvar1 = QS_ZHAR_ITEM_SPAWNED;
+			CreateTypeItem(monster.position.tile + Displacement { 1, 1 }, false, ItemType::Misc, IMISC_BOOK, false, false, true);
+			monster.flags |= MFLAG_QUEST_COMPLETE;
+			NetSendCmdQuest(true, Quests[Q_ZHAR]);
+		}
+	}
+
+	if (monster.uniqueType == UniqueMonsterType::Garbud && MyPlayer == &player) {
+		if (monster.talkMsg == TEXT_GARBUD1) {
+			Quests[Q_GARBUD]._qactive = QUEST_ACTIVE;
+			Quests[Q_GARBUD]._qlog = true;
+			NetSendCmdQuest(true, Quests[Q_GARBUD]);
+		}
+		if (monster.talkMsg == TEXT_GARBUD2 && (monster.flags & MFLAG_QUEST_COMPLETE) == 0) {
+			SpawnItem(monster, monster.position.tile + Displacement { 1, 1 }, false, true);
+			monster.flags |= MFLAG_QUEST_COMPLETE;
+			Quests[Q_GARBUD]._qvar1 = QS_GHARBAD_FIRST_ITEM_SPAWNED;
+			NetSendCmdQuest(true, Quests[Q_GARBUD]);
 		}
 	}
 }
@@ -4602,7 +4664,7 @@ void Monster::petrify()
 
 bool Monster::isWalking() const
 {
-	switch (mode) {
+	switch (getVisualMonsterMode()) {
 	case MonsterMode::MoveNorthwards:
 	case MonsterMode::MoveSouthwards:
 	case MonsterMode::MoveSideways:
@@ -4612,29 +4674,25 @@ bool Monster::isWalking() const
 	}
 }
 
-bool Monster::isImmune(missile_id missileType) const
+bool Monster::isImmune(MissileID missileType, DamageType missileElement) const
 {
-	missile_resistance missileElement = MissilesData[missileType].mResist;
-
-	if (((resistance & IMMUNE_MAGIC) != 0 && missileElement == MISR_MAGIC)
-	    || ((resistance & IMMUNE_FIRE) != 0 && missileElement == MISR_FIRE)
-	    || ((resistance & IMMUNE_LIGHTNING) != 0 && missileElement == MISR_LIGHTNING)
-	    || ((resistance & IMMUNE_ACID) != 0 && missileElement == MISR_ACID))
+	if (((resistance & IMMUNE_MAGIC) != 0 && missileElement == DamageType::Magic)
+	    || ((resistance & IMMUNE_FIRE) != 0 && missileElement == DamageType::Fire)
+	    || ((resistance & IMMUNE_LIGHTNING) != 0 && missileElement == DamageType::Lightning)
+	    || ((resistance & IMMUNE_ACID) != 0 && missileElement == DamageType::Acid))
 		return true;
-	if (missileType == MIS_HBOLT && type().type != MT_DIABLO && data().monsterClass != MonsterClass::Undead)
+	if (missileType == MissileID::HolyBolt && type().type != MT_DIABLO && data().monsterClass != MonsterClass::Undead)
 		return true;
 	return false;
 }
 
-bool Monster::isResistant(missile_id missileType) const
+bool Monster::isResistant(MissileID missileType, DamageType missileElement) const
 {
-	missile_resistance missileElement = MissilesData[missileType].mResist;
-
-	if (((resistance & RESIST_MAGIC) != 0 && missileElement == MISR_MAGIC)
-	    || ((resistance & RESIST_FIRE) != 0 && missileElement == MISR_FIRE)
-	    || ((resistance & RESIST_LIGHTNING) != 0 && missileElement == MISR_LIGHTNING))
+	if (((resistance & RESIST_MAGIC) != 0 && missileElement == DamageType::Magic)
+	    || ((resistance & RESIST_FIRE) != 0 && missileElement == DamageType::Fire)
+	    || ((resistance & RESIST_LIGHTNING) != 0 && missileElement == DamageType::Lightning))
 		return true;
-	if (gbIsHellfire && missileType == MIS_HBOLT && IsAnyOf(type().type, MT_DIABLO, MT_BONEDEMN))
+	if (gbIsHellfire && missileType == MissileID::HolyBolt && IsAnyOf(type().type, MT_DIABLO, MT_BONEDEMN))
 		return true;
 	return false;
 }
@@ -4660,12 +4718,26 @@ void Monster::tag(const Player &tagger)
 
 bool Monster::tryLiftGargoyle()
 {
-	if (ai == AI_GARG && (flags & MFLAG_ALLOW_SPECIAL) != 0) {
+	if (ai == MonsterAIID::Gargoyle && (flags & MFLAG_ALLOW_SPECIAL) != 0) {
 		flags &= ~MFLAG_ALLOW_SPECIAL;
 		mode = MonsterMode::SpecialMeleeAttack;
 		return true;
 	}
 	return false;
+}
+
+MonsterMode Monster::getVisualMonsterMode() const
+{
+	if (mode != MonsterMode::Petrified)
+		return mode;
+	size_t monsterId = this->getId();
+	for (auto &missile : Missiles) {
+		// Search the missile that will restore the original monster mode and use the saved/original monster mode from it
+		if (missile._mitype == MissileID::StoneCurse && static_cast<size_t>(missile.var2) == monsterId) {
+			return static_cast<MonsterMode>(missile.var1);
+		}
+	}
+	return MonsterMode::Petrified;
 }
 
 unsigned int Monster::toHitSpecial(_difficulty difficulty) const

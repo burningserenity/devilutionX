@@ -72,8 +72,9 @@ enum _item_indexes : int16_t { // TODO defines all indexes in AllItemsList
 	IDI_BARBARIAN = 139,
 	IDI_RUNEOFSTONE = 165,
 	IDI_SORCERER_DIABLO,
+	IDI_ARENAPOT,
 
-	IDI_LAST = IDI_SORCERER_DIABLO,
+	IDI_LAST = IDI_ARENAPOT,
 	IDI_NONE = -1,
 };
 
@@ -116,6 +117,7 @@ enum item_cursor_graphic : uint8_t {
 	ICURS_RING_OF_TRUTH               = 10,
 	ICURS_RING                        = 12,
 	ICURS_SPECTRAL_ELIXIR             = 15,
+	ICURS_ARENA_POTION                = 16,
 	ICURS_GOLDEN_ELIXIR               = 17,
 	ICURS_EMPYREAN_BAND               = 18,
 	ICURS_EAR_SORCERER                = 19,
@@ -430,6 +432,7 @@ enum item_misc_id : int8_t {
 	IMISC_RUNELAST,
 	IMISC_AURIC,
 	IMISC_NOTE,
+	IMISC_ARENAPOT,
 	IMISC_INVALID = -1,
 };
 
@@ -453,7 +456,7 @@ struct ItemData {
 	uint8_t iMinDex;
 	ItemSpecialEffect iFlags; // ItemSpecialEffect as bit flags
 	enum item_misc_id iMiscId;
-	enum spell_id iSpell;
+	SpellID iSpell;
 	bool iUsable;
 	uint16_t iValue;
 };
@@ -590,7 +593,7 @@ struct UniqueItem {
 	ItemPower powers[6];
 };
 
-extern ItemData AllItemsList[];
+extern const ItemData AllItemsList[];
 extern const PLStruct ItemPrefixes[];
 extern const PLStruct ItemSuffixes[];
 extern const UniqueItem UniqueItems[];

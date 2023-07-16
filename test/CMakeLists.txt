@@ -1,13 +1,13 @@
 include(GoogleTest)
 
 add_library(libdevilutionx_so SHARED)
-set_target_properties(libdevilutionx_so PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${DevilutionX_BINARY_DIR})
+set_target_properties(libdevilutionx_so PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 target_link_libraries(libdevilutionx_so PUBLIC libdevilutionx)
-target_include_directories(libdevilutionx_so INTERFACE "${DevilutionX_SOURCE_DIR}/Source")
+target_include_directories(libdevilutionx_so INTERFACE "${PROJECT_SOURCE_DIR}/Source")
 set_target_properties(libdevilutionx_so PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
 
 add_library(test_main STATIC main.cpp)
-target_link_libraries(test_main PUBLIC libdevilutionx_so GTest::gtest)
+target_link_libraries(test_main PUBLIC libdevilutionx_so GTest::gtest GTest::gmock)
 
 set(tests
   animationinfo_test
@@ -37,6 +37,7 @@ set(tests
   rectangle_test
   scrollrt_test
   stores_test
+  str_cat_test
   timedemo_test
   utf8_test
   writehero_test
@@ -48,7 +49,7 @@ foreach(test_target ${tests})
   add_executable(${test_target} "${test_target}.cpp")
   gtest_discover_tests(${test_target})
   target_link_libraries(${test_target} PRIVATE test_main)
-  set_target_properties(${test_target} PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${DevilutionX_BINARY_DIR})
+  set_target_properties(${test_target} PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
   if(GPERF)
     target_link_libraries(${test_target} PUBLIC ${GPERFTOOLS_LIBRARIES})
   endif()

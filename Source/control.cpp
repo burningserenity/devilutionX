@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <array>
 #include <cstddef>
+#include <cstdint>
 #include <string>
 
 #include <fmt/format.h>
@@ -31,7 +32,6 @@
 #include "levels/trigs.h"
 #include "lighting.h"
 #include "minitext.h"
-#include "miniwin/misc_msg.h"
 #include "missiles.h"
 #include "options.h"
 #include "panels/charpanel.hpp"
@@ -39,6 +39,7 @@
 #include "panels/spell_book.hpp"
 #include "panels/spell_icons.hpp"
 #include "panels/spell_list.hpp"
+#include "playerdat.hpp"
 #include "qol/stash.h"
 #include "qol/xpbar.h"
 #include "stores.h"
@@ -48,6 +49,7 @@
 #include "utils/log.hpp"
 #include "utils/sdl_geometry.h"
 #include "utils/stdcompat/optional.hpp"
+#include "utils/str_case.hpp"
 #include "utils/str_cat.hpp"
 #include "utils/str_split.hpp"
 #include "utils/string_or_view.hpp"
@@ -278,9 +280,12 @@ int CapStatPointsToAdd(int remainingStatPoints, const Player &player, CharacterA
 
 int DrawDurIcon4Item(const Surface &out, Item &pItem, int x, int c)
 {
+	const int durabilityThresholdGold = 5;
+	const int durabilityThresholdRed = 2;
+
 	if (pItem.isEmpty())
 		return x;
-	if (pItem._iDurability > 5)
+	if (pItem._iDurability > durabilityThresholdGold)
 		return x;
 	if (c == 0) {
 		switch (pItem._itype) {
@@ -305,10 +310,27 @@ int DrawDurIcon4Item(const Surface &out, Item &pItem, int x, int c)
 			break;
 		}
 	}
-	if (pItem._iDurability > 2)
-		c += 8;
-	ClxDraw(out, { x, -17 + GetMainPanel().position.y }, (*pDurIcons)[c]);
-	return x - 32 - 8;
+
+	// Calculate how much of the icon should be gold and red
+	int height = (*pDurIcons)[c].height(); // Height of durability icon CEL
+	int partition = 0;
+	if (pItem._iDurability > durabilityThresholdRed) {
+		int current = pItem._iDurability - durabilityThresholdRed;
+		partition = (height * current) / (durabilityThresholdGold - durabilityThresholdRed);
+	}
+
+	// Draw icon
+	int y = -17 + GetMainPanel().position.y;
+	if (partition > 0) {
+		const Surface stenciledBuffer = out.subregionY(y - partition, partition);
+		ClxDraw(stenciledBuffer, { x, partition }, (*pDurIcons)[c + 8]); // Gold icon
+	}
+	if (partition != height) {
+		const Surface stenciledBuffer = out.subregionY(y - height, height - partition);
+		ClxDraw(stenciledBuffer, { x, height }, (*pDurIcons)[c]); // Red icon
+	}
+
+	return x - (*pDurIcons)[c].height() - 8; // Add in spacing for the next durability icon
 }
 
 struct TextCmdItem {
@@ -384,9 +406,127 @@ std::string TextCmdArena(const string_view parameter)
 	return ret;
 }
 
+std::string TextCmdArenaPot(const string_view parameter)
+{
+	std::string ret;
+	if (!gbIsMultiplayer) {
+		StrAppend(ret, _("Arenas are only supported in multiplayer."));
+		return ret;
+	}
+
+	Player &myPlayer = *MyPlayer;
+
+	for (int potNumber = std::max(1, atoi(parameter.data())); potNumber > 0; potNumber--) {
+		Item item {};
+		InitializeItem(item, IDI_ARENAPOT);
+		GenerateNewSeed(item);
+		item.updateRequiredStatsCacheForPlayer(myPlayer);
+
+		if (!AutoPlaceItemInBelt(myPlayer, item, true) && !AutoPlaceItemInInventory(myPlayer, item, true)) {
+			break; // inventory is full
+		}
+	}
+
+	return ret;
+}
+
+std::string TextCmdInspect(const string_view parameter)
+{
+	std::string ret;
+	if (!gbIsMultiplayer) {
+		StrAppend(ret, _("Inspecting only supported in multiplayer."));
+		return ret;
+	}
+
+	if (parameter.empty()) {
+		StrAppend(ret, _("Stopped inspecting players."));
+		InspectPlayer = MyPlayer;
+		return ret;
+	}
+
+	const std::string param = AsciiStrToLower(parameter);
+	for (auto &player : Players) {
+		const std::string playerName = AsciiStrToLower(player._pName);
+		if (playerName.find(param) != std::string::npos) {
+			InspectPlayer = &player;
+			StrAppend(ret, _("Inspecting player: "));
+			StrAppend(ret, player._pName);
+			OpenCharPanel();
+			if (!sbookflag)
+				invflag = true;
+			RedrawEverything();
+			return ret;
+		}
+	}
+	StrAppend(ret, _("No players found with such a name"));
+	return ret;
+}
+
+bool IsQuestEnabled(const Quest &quest)
+{
+	switch (quest._qidx) {
+	case Q_FARMER:
+		return gbIsHellfire && !sgGameInitInfo.bCowQuest;
+	case Q_JERSEY:
+		return gbIsHellfire && sgGameInitInfo.bCowQuest;
+	case Q_GIRL:
+		return gbIsHellfire && sgGameInitInfo.bTheoQuest;
+	case Q_CORNSTN:
+		return gbIsHellfire && !gbIsMultiplayer;
+	case Q_GRAVE:
+	case Q_DEFILER:
+	case Q_NAKRUL:
+		return gbIsHellfire;
+	case Q_TRADER:
+		return false;
+	default:
+		return quest._qactive != QUEST_NOTAVAIL;
+	}
+}
+
+std::string TextCmdLevelSeed(const string_view parameter)
+{
+	string_view levelType = setlevel ? "set level" : "dungeon level";
+
+	char gameId[] = {
+		static_cast<char>((sgGameInitInfo.programid >> 24) & 0xFF),
+		static_cast<char>((sgGameInitInfo.programid >> 16) & 0xFF),
+		static_cast<char>((sgGameInitInfo.programid >> 8) & 0xFF),
+		static_cast<char>(sgGameInitInfo.programid & 0xFF),
+		'\0'
+	};
+
+	string_view mode = gbIsMultiplayer ? "MP" : "SP";
+	string_view questPool = UseMultiplayerQuests() ? "MP" : "Full";
+
+	uint32_t questFlags = 0;
+	for (const Quest &quest : Quests) {
+		questFlags <<= 1;
+		if (IsQuestEnabled(quest))
+			questFlags |= 1;
+	}
+
+	return StrCat(
+	    "Seedinfo for ", levelType, " ", currlevel, "\n",
+	    "seed: ", glSeedTbl[currlevel], "\n",
+#ifdef _DEBUG
+	    "Mid1: ", glMid1Seed[currlevel], "\n",
+	    "Mid2: ", glMid2Seed[currlevel], "\n",
+	    "Mid3: ", glMid3Seed[currlevel], "\n",
+	    "End: ", glEndSeed[currlevel], "\n",
+#endif
+	    "\n",
+	    gameId, " ", mode, "\n",
+	    questPool, " quests: ", questFlags, "\n",
+	    "Storybook: ", glSeedTbl[16]);
+}
+
 std::vector<TextCmdItem> TextCmdList = {
-	{ N_("/help"), N_("Prints help overview or help for a specific command."), N_("({command})"), &TextCmdHelp },
-	{ N_("/arena"), N_("Enter a PvP Arena."), N_("{arena-number}"), &TextCmdArena }
+	{ N_("/help"), N_("Prints help overview or help for a specific command."), N_("[command]"), &TextCmdHelp },
+	{ N_("/arena"), N_("Enter a PvP Arena."), N_("<arena-number>"), &TextCmdArena },
+	{ N_("/arenapot"), N_("Gives Arena Potions."), N_("<number>"), &TextCmdArenaPot },
+	{ N_("/inspect"), N_("Inspects stats and equipment of another player."), N_("<player name>"), &TextCmdInspect },
+	{ N_("/seedinfo"), N_("Show seed infos for current level."), "", &TextCmdLevelSeed },
 };
 
 bool CheckTextCommand(const string_view text)
@@ -493,7 +633,7 @@ bool IsLevelUpButtonVisible()
 	if (ControlMode == ControlTypes::VirtualGamepad) {
 		return false;
 	}
-	if (stextflag != STORE_NONE || IsStashOpen) {
+	if (stextflag != TalkID::None || IsStashOpen) {
 		return false;
 	}
 	if (QuestLogIsOpen && GetLeftPanel().contains(GetMainPanel().position + Displacement { 0, -74 })) {
@@ -552,6 +692,52 @@ bool IsChatAvailable()
 #else
 	return gbIsMultiplayer;
 #endif
+}
+
+void FocusOnCharInfo()
+{
+	Player &myPlayer = *MyPlayer;
+
+	if (invflag || myPlayer._pStatPts <= 0)
+		return;
+
+	// Find the first incrementable stat.
+	int stat = -1;
+	for (auto attribute : enum_values<CharacterAttribute>()) {
+		if (myPlayer.GetBaseAttributeValue(attribute) >= myPlayer.GetMaximumAttributeValue(attribute))
+			continue;
+		stat = static_cast<int>(attribute);
+	}
+	if (stat == -1)
+		return;
+
+	SetCursorPos(ChrBtnsRect[stat].Center());
+}
+
+void OpenCharPanel()
+{
+	QuestLogIsOpen = false;
+	CloseGoldWithdraw();
+	CloseStash();
+	chrflag = true;
+}
+
+void CloseCharPanel()
+{
+	chrflag = false;
+	if (IsInspectingPlayer()) {
+		InspectPlayer = MyPlayer;
+		RedrawEverything();
+		InitDiabloMsg(_("Stopped inspecting players."));
+	}
+}
+
+void ToggleCharPanel()
+{
+	if (chrflag)
+		CloseCharPanel();
+	else
+		OpenCharPanel();
 }
 
 void AddPanelString(string_view str)
@@ -698,7 +884,7 @@ void InitControlPan()
 	InfoString = {};
 	RedrawComponent(PanelDrawComponent::Health);
 	RedrawComponent(PanelDrawComponent::Mana);
-	chrflag = false;
+	CloseCharPanel();
 	spselflag = false;
 	sbooktab = 0;
 	sbookflag = false;
@@ -773,8 +959,8 @@ void DoPanBtn()
 	if (!spselflag && MousePosition.x >= 565 + mainPanelPosition.x && MousePosition.x < 621 + mainPanelPosition.x && MousePosition.y >= 64 + mainPanelPosition.y && MousePosition.y < 120 + mainPanelPosition.y) {
 		if ((SDL_GetModState() & KMOD_SHIFT) != 0) {
 			Player &myPlayer = *MyPlayer;
-			myPlayer._pRSpell = SPL_INVALID;
-			myPlayer._pRSplType = RSPLTYPE_INVALID;
+			myPlayer._pRSpell = SpellID::Invalid;
+			myPlayer._pRSplType = SpellType::Invalid;
 			RedrawEverything();
 			return;
 		}
@@ -841,30 +1027,30 @@ void CheckPanelInfo()
 		panelflag = true;
 		AddPanelString(_("Hotkey: 's'"));
 		Player &myPlayer = *MyPlayer;
-		const spell_id spellId = myPlayer._pRSpell;
+		const SpellID spellId = myPlayer._pRSpell;
 		if (IsValidSpell(spellId)) {
 			switch (myPlayer._pRSplType) {
-			case RSPLTYPE_SKILL:
-				AddPanelString(fmt::format(fmt::runtime(_("{:s} Skill")), pgettext("spell", spelldata[spellId].sNameText)));
+			case SpellType::Skill:
+				AddPanelString(fmt::format(fmt::runtime(_("{:s} Skill")), pgettext("spell", GetSpellData(spellId).sNameText)));
 				break;
-			case RSPLTYPE_SPELL: {
-				AddPanelString(fmt::format(fmt::runtime(_("{:s} Spell")), pgettext("spell", spelldata[spellId].sNameText)));
+			case SpellType::Spell: {
+				AddPanelString(fmt::format(fmt::runtime(_("{:s} Spell")), pgettext("spell", GetSpellData(spellId).sNameText)));
 				const int spellLevel = myPlayer.GetSpellLevel(spellId);
 				AddPanelString(spellLevel == 0 ? _("Spell Level 0 - Unusable") : fmt::format(fmt::runtime(_("Spell Level {:d}")), spellLevel));
 			} break;
-			case RSPLTYPE_SCROLL: {
-				AddPanelString(fmt::format(fmt::runtime(_("Scroll of {:s}")), pgettext("spell", spelldata[spellId].sNameText)));
+			case SpellType::Scroll: {
+				AddPanelString(fmt::format(fmt::runtime(_("Scroll of {:s}")), pgettext("spell", GetSpellData(spellId).sNameText)));
 				const InventoryAndBeltPlayerItemsRange items { myPlayer };
 				const int scrollCount = std::count_if(items.begin(), items.end(), [spellId](const Item &item) {
 					return item.isScrollOf(spellId);
 				});
 				AddPanelString(fmt::format(fmt::runtime(ngettext("{:d} Scroll", "{:d} Scrolls", scrollCount)), scrollCount));
 			} break;
-			case RSPLTYPE_CHARGES:
-				AddPanelString(fmt::format(fmt::runtime(_("Staff of {:s}")), pgettext("spell", spelldata[spellId].sNameText)));
+			case SpellType::Charges:
+				AddPanelString(fmt::format(fmt::runtime(_("Staff of {:s}")), pgettext("spell", GetSpellData(spellId).sNameText)));
 				AddPanelString(fmt::format(fmt::runtime(ngettext("{:d} Charge", "{:d} Charges", myPlayer.InvBody[INVLOC_HAND_LEFT]._iCharges)), myPlayer.InvBody[INVLOC_HAND_LEFT]._iCharges));
 				break;
-			case RSPLTYPE_INVALID:
+			case SpellType::Invalid:
 				break;
 			}
 		}
@@ -901,15 +1087,12 @@ void CheckBtnUp()
 
 		switch (i) {
 		case PanelButtonCharinfo:
-			QuestLogIsOpen = false;
-			CloseGoldWithdraw();
-			IsStashOpen = false;
-			chrflag = !chrflag;
+			ToggleCharPanel();
 			break;
 		case PanelButtonQlog:
-			chrflag = false;
+			CloseCharPanel();
 			CloseGoldWithdraw();
-			IsStashOpen = false;
+			CloseStash();
 			if (!QuestLogIsOpen)
 				StartQuestlog();
 			else
@@ -926,7 +1109,7 @@ void CheckBtnUp()
 		case PanelButtonInventory:
 			sbookflag = false;
 			CloseGoldWithdraw();
-			IsStashOpen = false;
+			CloseStash();
 			invflag = !invflag;
 			if (dropGoldFlag) {
 				CloseGoldDrop();
@@ -980,7 +1163,7 @@ void FreeControlPan()
 void DrawInfoBox(const Surface &out)
 {
 	DrawPanelBox(out, { 177, 62, 288, 63 }, GetMainPanel().position + Displacement { 177, 46 });
-	if (!panelflag && !trigflag && pcursinvitem == -1 && pcursstashitem == uint16_t(-1) && !spselflag) {
+	if (!panelflag && !trigflag && pcursinvitem == -1 && pcursstashitem == StashStruct::EmptyCell && !spselflag) {
 		InfoString = {};
 		InfoColor = UiFlags::ColorWhite;
 	}
@@ -994,10 +1177,7 @@ void DrawInfoBox(const Surface &out)
 		} else if (!myPlayer.CanUseItem(myPlayer.HoldItem)) {
 			InfoString = _("Requirements not met");
 		} else {
-			if (myPlayer.HoldItem._iIdentified)
-				InfoString = string_view(myPlayer.HoldItem._iIName);
-			else
-				InfoString = string_view(myPlayer.HoldItem._iName);
+			InfoString = myPlayer.HoldItem.getName();
 			InfoColor = myPlayer.HoldItem.getTextColor();
 		}
 	} else {
@@ -1024,7 +1204,7 @@ void DrawInfoBox(const Surface &out)
 			InfoColor = UiFlags::ColorWhitegold;
 			auto &target = Players[pcursplr];
 			InfoString = string_view(target._pName);
-			AddPanelString(fmt::format(fmt::runtime(_("{:s}, Level: {:d}")), _(ClassStrTbl[static_cast<std::size_t>(target._pClass)]), target._pLevel));
+			AddPanelString(fmt::format(fmt::runtime(_("{:s}, Level: {:d}")), _(PlayersData[static_cast<std::size_t>(target._pClass)].className), target._pLevel));
 			AddPanelString(fmt::format(fmt::runtime(_("Hit Points {:d} of {:d}")), target._pHitPoints >> 6, target._pMaxHP >> 6));
 		}
 	}
@@ -1047,10 +1227,7 @@ void ReleaseLvlBtn()
 {
 	const Point mainPanelPosition = GetMainPanel().position;
 	if (MousePosition.x >= 40 + mainPanelPosition.x && MousePosition.x <= 81 + mainPanelPosition.x && MousePosition.y >= -39 + mainPanelPosition.y && MousePosition.y <= -17 + mainPanelPosition.y) {
-		QuestLogIsOpen = false;
-		CloseGoldWithdraw();
-		IsStashOpen = false;
-		chrflag = true;
+		OpenCharPanel();
 	}
 	lvlbtndown = false;
 }
@@ -1246,15 +1423,23 @@ void DrawTalkPan(const Surface &out)
 		UiFlags color = player.friendlyMode ? UiFlags::ColorWhitegold : UiFlags::ColorRed;
 		const Point talkPanPosition = mainPanelPosition + Displacement { 172, 84 + 18 * talkBtn };
 		if (WhisperList[i]) {
+			// the normal (unpressed) voice button is pre-rendered on the panel, only need to draw over it when the button is held
 			if (TalkButtonsDown[talkBtn]) {
-				ClxDraw(out, talkPanPosition, (*talkButtons)[talkBtn != 0 ? 3 : 2]);
+				unsigned spriteIndex = talkBtn == 0 ? 2 : 3; // the first button sprite includes a tip from the devils wing so is different to the rest.
+				ClxDraw(out, talkPanPosition, (*talkButtons)[spriteIndex]);
+
+				// Draw the translated string over the top of the default (english) button. This graphic is inset to avoid overlapping the wingtip, letting
+				// the first button be treated the same as the other two further down the panel.
 				RenderClxSprite(out, (*TalkButton)[2], talkPanPosition + Displacement { 4, -15 });
 			}
 		} else {
-			int nCel = talkBtn != 0 ? 1 : 0;
+			unsigned spriteIndex = talkBtn == 0 ? 0 : 1; // the first button sprite includes a tip from the devils wing so is different to the rest.
 			if (TalkButtonsDown[talkBtn])
-				nCel += 4;
-			ClxDraw(out, talkPanPosition, (*talkButtons)[nCel]);
+				spriteIndex += 4; // held button sprites are at index 4 and 5 (with and without wingtip respectively)
+			ClxDraw(out, talkPanPosition, (*talkButtons)[spriteIndex]);
+
+			// Draw the translated string over the top of the default (english) button. This graphic is inset to avoid overlapping the wingtip, letting
+			// the first button be treated the same as the other two further down the panel.
 			RenderClxSprite(out, (*TalkButton)[TalkButtonsDown[talkBtn] ? 1 : 0], talkPanPosition + Displacement { 4, -15 });
 		}
 		if (player.plractive) {

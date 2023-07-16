@@ -5,14 +5,20 @@
  */
 #pragma once
 
-#include "miniwin/misc_msg.h"
-#include "mpq/mpq_reader.hpp"
 #include "utils/attributes.h"
+#include "utils/stdcompat/optional.hpp"
+
+#ifdef UNPACKED_MPQS
+#include <string>
+#else
+#include "mpq/mpq_reader.hpp"
+#endif
+
+#include <SDL.h>
 
 namespace devilution {
 
 extern bool gbActive;
-extern EventHandler CurrentEventHandler;
 extern DVL_API_FOR_TEST bool gbIsSpawn;
 extern DVL_API_FOR_TEST bool gbIsHellfire;
 extern DVL_API_FOR_TEST bool gbVanilla;
@@ -77,12 +83,26 @@ inline bool HaveExtraFonts()
 #endif
 }
 
+#ifdef UNPACKED_MPQS
+bool AreExtraFontsOutOfDate(const std::string &path);
+#else
+bool AreExtraFontsOutOfDate(MpqArchive &archive);
+#endif
+
+inline bool AreExtraFontsOutOfDate()
+{
+#ifdef UNPACKED_MPQS
+	return font_data_path && AreExtraFontsOutOfDate(*font_data_path);
+#else
+	return font_mpq && AreExtraFontsOutOfDate(*font_mpq);
+#endif
+}
+
 void init_cleanup();
 void LoadCoreArchives();
 void LoadLanguageArchive();
 void LoadGameArchives();
 void init_create_window();
 void MainWndProc(const SDL_Event &event);
-EventHandler SetEventHandler(EventHandler NewProc);
 
 } // namespace devilution

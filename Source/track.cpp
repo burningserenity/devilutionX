@@ -23,7 +23,7 @@ void RepeatWalk(Player &player)
 	if (!InDungeonBounds(cursPosition))
 		return;
 
-	if (player._pmode != PM_STAND && !(player.IsWalking() && player.AnimInfo.getFrameToUseForRendering() > 6))
+	if (player._pmode != PM_STAND && !(player.isWalking() && player.AnimInfo.getFrameToUseForRendering() > 6))
 		return;
 
 	const Point target = player.GetTargetPosition();
@@ -66,7 +66,7 @@ void RepeatMouseAction()
 	if (sgbMouseDown == CLICK_NONE && ControllerActionHeld == GameActionType_NONE)
 		return;
 
-	if (stextflag != STORE_NONE)
+	if (stextflag != TalkID::None)
 		return;
 
 	if (LastMouseButtonAction == MouseActionType::None)

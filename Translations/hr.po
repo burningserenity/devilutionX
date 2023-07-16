@@ -369,7 +369,8 @@ msgid "Client-Server (TCP)"
 msgstr "Klijent-Poslužitelj (TCP)"
 
 #: Source/DiabloUI/selconn.cpp:15
-msgid "Loopback"
+#, fuzzy
+msgid "Offline" 
 msgstr "Izvanmrežno"
 
 #: Source/DiabloUI/selconn.cpp:56 Source/DiabloUI/selgame.cpp:634
@@ -832,11 +833,11 @@ msgstr "Prijašnji izbornik"
 
 #: Source/DiabloUI/support_lines.cpp:8
 msgid ""
-"We maintain a chat server at Discord.gg/YQKCAYQ Follow the links to join our "
+"We maintain a chat server at Discord.gg/devilutionx Follow the links to join our "
 "community where we talk about things related to Diablo, and the Hellfire "
 "expansion."
 msgstr ""
-"Mi održavamo poslužitelj razgovora na Discord.gg/YQKCAYQ Slijedite poveznice "
+"Mi održavamo poslužitelj razgovora na Discord.gg/devilutionx Slijedite poveznice "
 "kako bi se pridružili našoj zajednici gdje raspravljamo o stvarima "
 "povezanima s Diablom i Hellfire proširenjem."
 
@@ -1468,7 +1469,7 @@ msgstr "{} težina"
 msgid "In Menu"
 msgstr "U izbornik"
 
-#: Source/dvlnet/loopback.cpp:113
+#: Source/dvlnet/loopback.cpp:118
 msgid "loopback"
 msgstr "izvanmrežno"
 
@@ -4024,20 +4025,12 @@ msgid "Activate to read"
 msgstr "Aktiviraj za čitanje"
 
 #: Source/items.cpp:1798
-msgid "Right-click to read, then"
-msgstr "Desno klikni za čitanje, zatim"
-
-#: Source/items.cpp:1799
-msgid "left-click to target"
-msgstr "lijevo klikni na metu"
+msgid "Right-click to read, then\nleft-click to target"
+msgstr "Desno klikni za čitanje, zatim\nlijevo klikni na metu"
 
 #: Source/items.cpp:1802
-msgid "Select from spell book, then"
-msgstr "Odaberi iz knjige čarolije, zatim"
-
-#: Source/items.cpp:1803
-msgid "cast spell to read"
-msgstr "bacite čaroliju za čitanje"
+msgid "Select from spell book, then\ncast spell to read"
+msgstr "Odaberi iz knjige čarolije, zatim\nbacite čaroliju za čitanje"
 
 #: Source/items.cpp:1816
 msgid "Right-click to use"

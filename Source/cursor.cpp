@@ -5,6 +5,8 @@
  */
 #include "cursor.h"
 
+#include <cstdint>
+
 #include <fmt/format.h>
 
 #include "DiabloUI/diabloui.h"
@@ -28,6 +30,8 @@
 #include "track.h"
 #include "utils/attributes.h"
 #include "utils/language.h"
+#include "utils/sdl_bilinear_scale.hpp"
+#include "utils/surface_to_clx.hpp"
 #include "utils/utf8.hpp"
 
 namespace devilution {
@@ -108,6 +112,9 @@ const uint16_t InvItemHeight2[InvItems2Size] = {
 	// clang-format on
 };
 
+OptionalOwnedClxSpriteList *HalfSizeItemSprites;
+OptionalOwnedClxSpriteList *HalfSizeItemSpritesRed;
+
 } // namespace
 
 /** Current highlighted monster */
@@ -153,6 +160,11 @@ ClxSprite GetInvItemSprite(int cursId)
 	return (*pCursCels2)[cursId - InvItems1Size - 1];
 }
 
+size_t GetNumInvItems()
+{
+	return InvItems1Size + InvItems2Size;
+}
+
 Size GetInvItemSize(int cursId)
 {
 	const int i = cursId - 1;
@@ -161,9 +173,79 @@ Size GetInvItemSize(int cursId)
 	return { InvItemWidth1[i], InvItemHeight1[i] };
 }
 
+ClxSprite GetHalfSizeItemSprite(int cursId)
+{
+	return (*HalfSizeItemSprites[cursId])[0];
+}
+
+ClxSprite GetHalfSizeItemSpriteRed(int cursId)
+{
+	return (*HalfSizeItemSpritesRed[cursId])[0];
+}
+
+void CreateHalfSizeItemSprites()
+{
+	if (HalfSizeItemSprites != nullptr)
+		return;
+	const int numInvItems = gbIsHellfire
+	    ? InvItems1Size + InvItems2Size - (static_cast<size_t>(CURSOR_FIRSTITEM) - 1)
+	    : InvItems1Size + (static_cast<size_t>(CURSOR_FIRSTITEM) - 1);
+	HalfSizeItemSprites = new OptionalOwnedClxSpriteList[numInvItems];
+	HalfSizeItemSpritesRed = new OptionalOwnedClxSpriteList[numInvItems];
+	const uint8_t *redTrn = GetInfravisionTRN();
+
+	constexpr int MaxWidth = 28 * 3;
+	constexpr int MaxHeight = 28 * 3;
+	OwnedSurface ownedItemSurface { MaxWidth, MaxHeight };
+	OwnedSurface ownedHalfSurface { MaxWidth / 2, MaxHeight / 2 };
+
+	const auto createHalfSize = [&, redTrn](const ClxSprite itemSprite, size_t outputIndex) {
+		if (itemSprite.width() <= 28 && itemSprite.height() <= 28) {
+			// Skip creating half-size sprites for 1x1 items because we always render them at full size anyway.
+			return;
+		}
+		const Surface itemSurface = ownedItemSurface.subregion(0, 0, itemSprite.width(), itemSprite.height());
+		SDL_Rect itemSurfaceRect = MakeSdlRect(0, 0, itemSurface.w(), itemSurface.h());
+		SDL_SetClipRect(itemSurface.surface, &itemSurfaceRect);
+		SDL_FillRect(itemSurface.surface, nullptr, 1);
+		ClxDraw(itemSurface, { 0, itemSurface.h() }, itemSprite);
+
+		const Surface halfSurface = ownedHalfSurface.subregion(0, 0, itemSurface.w() / 2, itemSurface.h() / 2);
+		SDL_Rect halfSurfaceRect = MakeSdlRect(0, 0, halfSurface.w(), halfSurface.h());
+		SDL_SetClipRect(halfSurface.surface, &halfSurfaceRect);
+		BilinearDownscaleByHalf8(itemSurface.surface, paletteTransparencyLookup, halfSurface.surface, 1);
+		HalfSizeItemSprites[outputIndex].emplace(SurfaceToClx(halfSurface, 1, 1));
+
+		SDL_FillRect(itemSurface.surface, nullptr, 1);
+		ClxDrawTRN(itemSurface, { 0, itemSurface.h() }, itemSprite, redTrn);
+		BilinearDownscaleByHalf8(itemSurface.surface, paletteTransparencyLookup, halfSurface.surface, 1);
+		HalfSizeItemSpritesRed[outputIndex].emplace(SurfaceToClx(halfSurface, 1, 1));
+	};
+
+	size_t outputIndex = 0;
+	for (size_t i = static_cast<int>(CURSOR_FIRSTITEM) - 1; i < InvItems1Size; ++i, ++outputIndex) {
+		createHalfSize((*pCursCels)[i], outputIndex);
+	}
+	if (gbIsHellfire) {
+		for (size_t i = 0; i < InvItems2Size; ++i, ++outputIndex) {
+			createHalfSize((*pCursCels2)[i], outputIndex);
+		}
+	}
+}
+
+void FreeHalfSizeItemSprites()
+{
+	if (HalfSizeItemSprites != nullptr) {
+		delete[] HalfSizeItemSprites;
+		HalfSizeItemSprites = nullptr;
+		delete[] HalfSizeItemSpritesRed;
+		HalfSizeItemSpritesRed = nullptr;
+	}
+}
+
 void DrawItem(const Item &item, const Surface &out, Point position, ClxSprite clx)
 {
-	const bool usable = item._iStatFlag;
+	const bool usable = !IsInspectingPlayer() ? item._iStatFlag : InspectPlayer->CanUseItem(item);
 	if (usable) {
 		ClxDraw(out, position, clx);
 	} else {
@@ -230,7 +312,7 @@ void InitLevelCursor()
 	pcursmonst = -1;
 	ObjectUnderCursor = nullptr;
 	pcursitem = -1;
-	pcursstashitem = uint16_t(-1);
+	pcursstashitem = StashStruct::EmptyCell;
 	pcursplr = -1;
 	ClearCursor();
 }
@@ -238,7 +320,7 @@ void InitLevelCursor()
 void CheckTown()
 {
 	for (auto &missile : Missiles) {
-		if (missile._mitype == MIS_TOWN) {
+		if (missile._mitype == MissileID::TownPortal) {
 			if (EntranceBoundaryContains(missile.position.tile, cursPosition)) {
 				trigflag = true;
 				InfoString = _("Town Portal");
@@ -252,7 +334,7 @@ void CheckTown()
 void CheckRportal()
 {
 	for (auto &missile : Missiles) {
-		if (missile._mitype == MIS_RPORTAL) {
+		if (missile._mitype == MissileID::RedPortal) {
 			if (EntranceBoundaryContains(missile.position.tile, cursPosition)) {
 				trigflag = true;
 				InfoString = _("Portal to");
@@ -297,7 +379,7 @@ void CheckCursMove()
 
 	const Player &myPlayer = *MyPlayer;
 
-	if (myPlayer.IsWalking()) {
+	if (myPlayer.isWalking()) {
 		Displacement offset = GetOffsetForWalking(myPlayer.AnimInfo, myPlayer._pdir, true);
 		sx -= offset.deltaX;
 		sy -= offset.deltaY;
@@ -366,7 +448,7 @@ void CheckCursMove()
 	if ((sgbMouseDown != CLICK_NONE || ControllerActionHeld != GameActionType_NONE) && IsNoneOf(LastMouseButtonAction, MouseActionType::None, MouseActionType::Attack, MouseActionType::Spell)) {
 		InvalidateTargets();
 
-		if (pcursmonst == -1 && ObjectUnderCursor == nullptr && pcursitem == -1 && pcursinvitem == -1 && pcursstashitem == uint16_t(-1) && pcursplr == -1) {
+		if (pcursmonst == -1 && ObjectUnderCursor == nullptr && pcursitem == -1 && pcursinvitem == -1 && pcursstashitem == StashStruct::EmptyCell && pcursplr == -1) {
 			cursPosition = { mx, my };
 			CheckTrigForce();
 			CheckTown();
@@ -385,7 +467,7 @@ void CheckCursMove()
 		RedrawComponent(PanelDrawComponent::Belt);
 	}
 	pcursinvitem = -1;
-	pcursstashitem = uint16_t(-1);
+	pcursstashitem = StashStruct::EmptyCell;
 	pcursplr = -1;
 	ShowUniqueItemInfoBox = false;
 	panelflag = false;

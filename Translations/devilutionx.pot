@@ -362,7 +362,7 @@ msgid "Client-Server (TCP)"
 msgstr ""
 
 #: Source/DiabloUI/selconn.cpp:15
-msgid "Loopback"
+msgid "Offline" 
 msgstr ""
 
 #: Source/DiabloUI/selconn.cpp:54 Source/DiabloUI/selgame.cpp:604
@@ -778,7 +778,7 @@ msgid "Previous Menu"
 msgstr ""
 
 #: Source/DiabloUI/support_lines.cpp:8
-msgid "We maintain a chat server at Discord.gg/YQKCAYQ Follow the links to join our community where we talk about things related to Diablo, and the Hellfire expansion."
+msgid "We maintain a chat server at Discord.gg/devilutionx Follow the links to join our community where we talk about things related to Diablo, and the Hellfire expansion."
 msgstr ""
 
 #: Source/DiabloUI/support_lines.cpp:10
@@ -1374,7 +1374,7 @@ msgstr ""
 msgid "In Menu"
 msgstr ""
 
-#: Source/dvlnet/loopback.cpp:113
+#: Source/dvlnet/loopback.cpp:118
 msgid "loopback"
 msgstr ""
 
@@ -3845,19 +3845,10 @@ msgid "Activate to read"
 msgstr ""
 
 #: Source/items.cpp:1837
-msgid "Right-click to read, then"
-msgstr ""
-
-#: Source/items.cpp:1838
-msgid "left-click to target"
-msgstr ""
+msgid "Right-click to read, then\nleft-click to target"
 
 #: Source/items.cpp:1841
-msgid "Select from spell book, then"
-msgstr ""
-
-#: Source/items.cpp:1842
-msgid "cast spell to read"
+msgid "Select from spell book, then\ncast spell to read"
 msgstr ""
 
 #: Source/items.cpp:1855

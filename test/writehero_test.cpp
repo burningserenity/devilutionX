@@ -2,7 +2,6 @@
 
 #include <cstdint>
 #include <cstdio>
-#include <fstream>
 #include <vector>
 
 #include <SDL_endian.h>
@@ -12,6 +11,7 @@
 #include "loadsave.h"
 #include "pack.h"
 #include "pfile.h"
+#include "utils/file_util.h"
 #include "utils/paths.h"
 
 namespace devilution {
@@ -53,8 +53,6 @@ void SwapLE(PlayerPack &player)
 		SwapLE(item);
 	}
 	player.wReflections = SDL_SwapLE16(player.wReflections);
-	player.wReserved2 = SDL_SwapLE16(player.wReserved2);
-	player.wReserved8 = SDL_SwapLE16(player.wReserved8);
 	player.pDiabloKillLevel = SDL_SwapLE32(player.pDiabloKillLevel);
 	player.pDifficulty = SDL_SwapLE32(player.pDifficulty);
 	player.pDamAcFlags = SDL_SwapLE32(player.pDamAcFlags);
@@ -257,7 +255,7 @@ void PackPlayerTest(PlayerPack *pPack)
 
 void AssertPlayer(Player &player)
 {
-	ASSERT_EQ(Count8(player._pSplLvl, 64), 23);
+	ASSERT_EQ(CountU8(player._pSplLvl, 64), 23);
 	ASSERT_EQ(Count8(player.InvGrid, InventoryGridCells), 9);
 	ASSERT_EQ(CountItems(player.InvBody, NUM_INVLOC), 6);
 	ASSERT_EQ(CountItems(player.InvList, InventoryGridCells), 2);
@@ -297,9 +295,7 @@ void AssertPlayer(Player &player)
 	ASSERT_EQ(player.pDungMsgs2, 0);
 	ASSERT_EQ(player.pLvlLoad, 0);
 	ASSERT_EQ(player.pDiabloKillLevel, 3);
-	ASSERT_EQ(player.pBattleNet, 0);
 	ASSERT_EQ(player.pManaShield, 0);
-	ASSERT_EQ(player.pDifficulty, 0);
 	ASSERT_EQ(player.pDamAcFlags, ItemSpecialEffectHf::None);
 
 	ASSERT_EQ(player._pmode, 0);
@@ -309,13 +305,13 @@ void AssertPlayer(Player &player)
 	ASSERT_EQ(player.AnimInfo.tickCounterOfCurrentFrame, 1);
 	ASSERT_EQ(player.AnimInfo.numberOfFrames, 20);
 	ASSERT_EQ(player.AnimInfo.currentFrame, 0);
-	ASSERT_EQ(player.queuedSpell.spellId, -1);
-	ASSERT_EQ(player.queuedSpell.spellType, 4);
+	ASSERT_EQ(player.queuedSpell.spellId, SpellID::Invalid);
+	ASSERT_EQ(player.queuedSpell.spellType, SpellType::Invalid);
 	ASSERT_EQ(player.queuedSpell.spellFrom, 0);
-	ASSERT_EQ(player._pTSpell, 0);
-	ASSERT_EQ(player._pRSpell, -1);
-	ASSERT_EQ(player._pRSplType, 4);
-	ASSERT_EQ(player._pSBkSpell, -1);
+	ASSERT_EQ(player.inventorySpell, SpellID::Null);
+	ASSERT_EQ(player._pRSpell, SpellID::Invalid);
+	ASSERT_EQ(player._pRSplType, SpellType::Invalid);
+	ASSERT_EQ(player._pSBkSpell, SpellID::Invalid);
 	ASSERT_EQ(player._pAblSpells, 134217728);
 	ASSERT_EQ(player._pScrlSpells, 0);
 	ASSERT_EQ(player._pSpellFlags, SpellFlag::None);
@@ -327,7 +323,7 @@ void AssertPlayer(Player &player)
 	ASSERT_EQ(player._pMaxHP, 16640);
 	ASSERT_EQ(player._pMana, 14624);
 	ASSERT_EQ(player._pMaxMana, 14624);
-	ASSERT_EQ(player._pNextExper, 1583495809);
+	ASSERT_EQ(player._pNextExper, 1310707109);
 	ASSERT_EQ(player._pMagResist, 75);
 	ASSERT_EQ(player._pFireResist, 16);
 	ASSERT_EQ(player._pLghtResist, 75);
@@ -353,7 +349,6 @@ void AssertPlayer(Player &player)
 	ASSERT_EQ(player._pIFlags, ItemSpecialEffect::None);
 	ASSERT_EQ(player._pIGetHit, 0);
 	ASSERT_EQ(player._pISplLvlAdd, 0);
-	ASSERT_EQ(player._pISplDur, 0);
 	ASSERT_EQ(player._pIEnAc, 0);
 	ASSERT_EQ(player._pIFMinDam, 0);
 	ASSERT_EQ(player._pIFMaxDam, 0);
@@ -377,21 +372,27 @@ TEST(Writehero, pfile_write_hero)
 	Players.resize(1);
 	MyPlayerId = 0;
 	MyPlayer = &Players[MyPlayerId];
-	*MyPlayer = {};
 
 	_uiheroinfo info {};
-	strcpy(info.name, "TestPlayer");
 	info.heroclass = HeroClass::Rogue;
 	pfile_ui_save_create(&info);
 	PlayerPack pks;
 	PackPlayerTest(&pks);
-	UnPackPlayer(&pks, *MyPlayer, true);
+	UnPackPlayer(pks, *MyPlayer);
 	AssertPlayer(Players[0]);
 	pfile_write_hero();
 
-	std::ifstream f("multi_0.sv", std::ios::binary);
+	const char *path = "multi_0.sv";
+	uintmax_t size;
+	ASSERT_TRUE(GetFileSize(path, &size));
+	FILE *f = std::fopen(path, "rb");
+	ASSERT_TRUE(f != nullptr);
+	std::unique_ptr<char[]> data { new char[size] };
+	ASSERT_EQ(std::fread(data.get(), size, 1, f), 1);
+	std::fclose(f);
+
 	std::vector<unsigned char> s(picosha2::k_digest_size);
-	picosha2::hash256(f, s.begin(), s.end());
+	picosha2::hash256(data.get(), data.get() + size, s.begin(), s.end());
 	EXPECT_EQ(picosha2::bytes_to_hex_string(s.begin(), s.end()),
 	    "a79367caae6192d54703168d82e0316aa289b2a33251255fad8abe34889c1d3a");
 }

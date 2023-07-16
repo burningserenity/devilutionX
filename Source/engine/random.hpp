@@ -30,6 +30,19 @@ void SetRndSeed(uint32_t seed);
 uint32_t GetLCGEngineState();
 
 /**
+ * @brief Advance the global RandomNumberEngine state by the specified number of rounds
+ *
+ * Only used to maintain vanilla compatibility until logic requiring reproducable random number generation is isolated.
+ * @param count How many values to discard
+ */
+void DiscardRandomValues(unsigned count);
+
+/**
+ * @brief Advances the global RandomNumberEngine state and returns the new value
+ */
+uint32_t GenerateSeed();
+
+/**
  * @brief Generates a random non-negative integer (most of the time) using the vanilla RNG
  *
  * This advances the engine state then interprets the new engine state as a signed value and calls std::abs to try
@@ -41,7 +54,7 @@ uint32_t GetLCGEngineState();
  *
  * @return A random number in the range [0,2^31) or -2^31
  */
-int32_t AdvanceRndSeed();
+[[nodiscard]] int32_t AdvanceRndSeed();
 
 /**
  * @brief Generates a random integer less than the given limit using the vanilla RNG
@@ -82,6 +95,30 @@ const T PickRandomlyAmong(const std::initializer_list<T> &values)
 	const auto index { std::max<int32_t>(GenerateRnd(static_cast<int32_t>(values.size())), 0) };
 
 	return *(values.begin() + index);
+}
+
+/**
+ * @brief Generates a random non-negative integer
+ *
+ * Effectively the same as GenerateRnd but will never return a negative value
+ * @param v upper limit for the return value
+ * @return a value between 0 and v-1 inclusive, i.e. the range [0, v)
+ */
+inline int32_t RandomIntLessThan(int32_t v)
+{
+	return std::max<int32_t>(GenerateRnd(v), 0);
+}
+
+/**
+ * @brief Randomly chooses a value somewhere within the given range
+ * @param min lower limit, minumum possible value
+ * @param max upper limit, either the maximum possible value for a closed range (the default behaviour) or one greater than the maximum value for a half-open range
+ * @param halfOpen whether to use the limits as a half-open range or not
+ * @return a randomly selected integer
+ */
+inline int32_t RandomIntBetween(int32_t min, int32_t max, bool halfOpen = false)
+{
+	return RandomIntLessThan(max - min + (halfOpen ? 0 : 1)) + min;
 }
 
 } // namespace devilution

@@ -41,7 +41,6 @@ declare BUILD_TYPE=release
 
 main() {
 	parse_args "$@"
-	BUILD_DIR="build-${TARGET}"
 	BUILDROOT_TARGET="$TARGET"
 
 	# If a TOOLCHAIN environment variable is set, just use that.
@@ -100,6 +99,7 @@ parse_args() {
 		exit 64
 	fi
 	TARGET="${positional[0]}"
+	BUILD_DIR="build-${TARGET}"
 
 	if (( PROFILE_GENERATE )) && (( PROFILE_USE )); then
 		>&2 echo "Error: at most one of --profile-use and --profile-generate is allowed"
@@ -110,15 +110,24 @@ parse_args() {
 			"-DDEVILUTIONX_PROFILE_GENERATE=ON"
 			"-DDEVILUTIONX_PROFILE_DIR=${PROFILE_DIR}"
 		)
-		BUILD_TYPE=relwithdebinfo
 		OPK_DESKTOP_NAME="DevilutionX PG"
 		OPK_DESKTOP_EXEC="profile-generate.sh"
 		OPK_EXTRA_FILES=(
 			Packaging/OpenDingux/profile-generate.sh
 			test/fixtures/timedemo/WarriorLevel1to2/demo_0.dmo
+		)
+		local -a demo_saves=(
 			test/fixtures/timedemo/WarriorLevel1to2/demo_0_reference_spawn_0.sv
 			test/fixtures/timedemo/WarriorLevel1to2/spawn_0.sv
 		)
+		if [[ $TARGET = rg99 ]]; then
+			# We use unpacked saves on RG99.
+			mkdir -p "$BUILD_DIR/demo-saves"
+			unpack_and_minify_mpq --output-dir "$BUILD_DIR/demo-saves" "${demo_saves[@]}"
+			OPK_EXTRA_FILES+=("$BUILD_DIR/demo-saves"/*)
+		else
+			OPK_EXTRA_FILES+=("${demo_saves[@]}")
+		fi
 	fi
 	if (( PROFILE_USE )); then
 		CMAKE_CONFIGURE_OPTS+=(
@@ -140,18 +149,40 @@ prepare_buildroot() {
 		git clone --depth=1 "${BUILDROOT_REPOS[$BUILDROOT_TARGET]}" "$BUILDROOT"
 	fi
 	cd "$BUILDROOT"
+	mkdir -p ../shared-dl
 	ln -s ../shared-dl dl
 
 	# Work around a BR2_EXTERNAL initialization bug in older buildroots.
 	mkdir -p output
 	touch output/.br-external.mk
-	make ${BUILDROOT_DEFCONFIGS[$BUILDROOT_TARGET]}
+	local -a config_args=(${BUILDROOT_DEFCONFIGS[$BUILDROOT_TARGET]})
+	local -r config="${config_args[0]}"
+
+	# If the buildroot uses per-package directories, disable them.
+	# Otherwise, we'd have to buildroot the entire buildroot (up to `host-finalize`) to get
+	# the merged host directory.
+	if grep -q BR2_PER_PACKAGE_DIRECTORIES=y "configs/${config}"; then
+		local -r new_config="${config%_defconfig}_no_ppd_defconfig"
+		sed 's/BR2_PER_PACKAGE_DIRECTORIES=y/# BR2_PER_PACKAGE_DIRECTORIES is not selected/' \
+		  "configs/${config}" > "configs/${new_config}"
+		config_args[0]="$new_config"
+	fi
+
+	make "${config_args[@]}"
 	cd -
 }
 
 make_buildroot() {
 	cd "$BUILDROOT"
-	BR2_JLEVEL=0 make toolchain sdl
+	local -a env_args=(
+	  # Unset client variables that cause issues with buildroot
+	  -u PERL_MM_OPT
+	  -u CMAKE_GENERATOR -u CMAKE_GENERATOR_PLATFORM -u CMAKE_GENERATOR_TOOLSET -u CMAKE_GENERATOR_INSTANCE
+
+	  # Enable parallelism
+	  BR2_JLEVEL=0
+	)
+	env "${env_args[@]}" make toolchain sdl
 	cd -
 }
 
@@ -159,9 +190,11 @@ cmake_configure() {
 	# libzt uses `-fstack-protector` GCC flag by default.
 	# We disable `-fstack-protector` because it isn't supported by target libc.
 	cmake -S. -B"$BUILD_DIR" \
+		-G "Unix Makefiles" \
 		"-DTARGET_PLATFORM=$TARGET" \
 		-DCMAKE_TOOLCHAIN_FILE="${TOOLCHAIN}/usr/share/buildroot/toolchainfile.cmake" \
 		-DBUILD_TESTING=OFF \
+		-DDEVILUTIONX_SYSTEM_LIBFMT=OFF \
 		-DDEVILUTIONX_SYSTEM_LIBSODIUM=OFF \
 		-DDEVILUTIONX_SYSTEM_BZIP2=OFF \
 		-DSTACK_PROTECTOR=OFF \

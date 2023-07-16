@@ -100,7 +100,7 @@ msgstr "Assoziierter Produzent"
 #. TRANSLATORS: Keep Strike Team as Name
 #: Source/DiabloUI/credits_lines.cpp:73
 msgid "Diablo Strike Team"
-msgstr "Diablo-Einsatzteam"
+msgstr "Diablo Strike Team"
 
 #: Source/DiabloUI/credits_lines.cpp:77 Source/gamemenu.cpp:71
 msgid "Music"
@@ -368,7 +368,8 @@ msgid "Client-Server (TCP)"
 msgstr "Client-Server (TCP)"
 
 #: Source/DiabloUI/selconn.cpp:15
-msgid "Loopback"
+#, fuzzy
+msgid "Offline" 
 msgstr "Loopback"
 
 #: Source/DiabloUI/selconn.cpp:54 Source/DiabloUI/selgame.cpp:604
@@ -836,11 +837,11 @@ msgstr "Vorheriges Menü"
 
 #: Source/DiabloUI/support_lines.cpp:8
 msgid ""
-"We maintain a chat server at Discord.gg/YQKCAYQ Follow the links to join our "
+"We maintain a chat server at Discord.gg/devilutionx Follow the links to join our "
 "community where we talk about things related to Diablo, and the Hellfire "
 "expansion."
 msgstr ""
-"Wir unterhalten einen Chatserver unter Discord.gg/YQKCAYQ rund um Diablo und "
+"Wir unterhalten einen Chatserver unter Discord.gg/devilutionx rund um Diablo und "
 "das Hellfire-Addon. Du bist herzlich eingeladen, unserer Community "
 "beizutreten."
 
@@ -1475,7 +1476,7 @@ msgstr "Schwierigkeitsgrad: {}"
 msgid "In Menu"
 msgstr "Im Hauptmenü"
 
-#: Source/dvlnet/loopback.cpp:113
+#: Source/dvlnet/loopback.cpp:118
 msgid "loopback"
 msgstr "Loopback"
 
@@ -4002,12 +4003,8 @@ msgid "Right-click to read"
 msgstr "Rechtsklick zum Lesen"
 
 #: Source/items.cpp:1814 Source/items.cpp:1835
-msgid "Select from spell book, then"
-msgstr "Aus dem Zauberbuch wählen, dann"
-
-#: Source/items.cpp:1815 Source/items.cpp:1836
-msgid "cast spell to read"
-msgstr "Zaubern zum Lesen"
+msgid "Select from spell book, then\ncast spell to read"
+msgstr "Aus dem Zauberbuch wählen, dann\nZaubern zum Lesen"
 
 #: Source/items.cpp:1817 Source/items.cpp:1838 Source/items.cpp:1852
 msgid "Open inventory to use"
@@ -4018,12 +4015,8 @@ msgid "Activate to read"
 msgstr "Linksklick zum Lesen"
 
 #: Source/items.cpp:1825
-msgid "Right-click to read, then"
-msgstr "Rechtsklick zum Lesen, dann"
-
-#: Source/items.cpp:1826
-msgid "left-click to target"
-msgstr "Linksklick zum Zielen"
+msgid "Right-click to read, then\nleft-click to target"
+msgstr "Rechtsklick zum Lesen, dann Linksklick zum Zielen"
 
 #: Source/items.cpp:1849
 msgid "Right-click to use"

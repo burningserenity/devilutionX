@@ -5,6 +5,8 @@
  */
 #pragma once
 
+#include <cstdint>
+
 #include "DiabloUI/ui_flags.hpp"
 #include "control.h"
 #include "engine.h"
@@ -19,35 +21,35 @@ namespace devilution {
 #define SMITH_PREMIUM_ITEMS 15
 #define STORE_LINES 104
 
-enum talk_id : uint8_t {
-	STORE_NONE,
-	STORE_SMITH,
-	STORE_SBUY,
-	STORE_SSELL,
-	STORE_SREPAIR,
-	STORE_WITCH,
-	STORE_WBUY,
-	STORE_WSELL,
-	STORE_WRECHARGE,
-	STORE_NOMONEY,
-	STORE_NOROOM,
-	STORE_CONFIRM,
-	STORE_BOY,
-	STORE_BBOY,
-	STORE_HEALER,
-	STORE_STORY,
-	STORE_HBUY,
-	STORE_SIDENTIFY,
-	STORE_SPBUY,
-	STORE_GOSSIP,
-	STORE_IDSHOW,
-	STORE_TAVERN,
-	STORE_DRUNK,
-	STORE_BARMAID,
+enum class TalkID : uint8_t {
+	None,
+	Smith,
+	SmithBuy,
+	SmithSell,
+	SmithRepair,
+	Witch,
+	WitchBuy,
+	WitchSell,
+	WitchRecharge,
+	NoMoney,
+	NoRoom,
+	Confirm,
+	Boy,
+	BoyBuy,
+	Healer,
+	Storyteller,
+	HealerBuy,
+	StorytellerIdentify,
+	SmithPremiumBuy,
+	Gossip,
+	StorytellerIdentifyShow,
+	Tavern,
+	Drunk,
+	Barmaid,
 };
 
 /** Currently active store */
-extern talk_id stextflag;
+extern TalkID stextflag;
 
 /** Current index into storehidx/storehold */
 extern DVL_API_FOR_TEST int storenumh;
@@ -86,11 +88,11 @@ void SetupTownStores();
 
 void FreeStoreMem();
 
-void PrintSString(const Surface &out, int margin, int line, string_view text, UiFlags flags, int price = 0);
+void PrintSString(const Surface &out, int margin, int line, string_view text, UiFlags flags, int price = 0, int cursId = -1, bool cursIndent = false);
 void DrawSLine(const Surface &out, int sy);
 void DrawSTextHelp();
 void ClearSText(int s, int e);
-void StartStore(talk_id s);
+void StartStore(TalkID s);
 void DrawSText(const Surface &out);
 void StoreESC();
 void StoreUp();

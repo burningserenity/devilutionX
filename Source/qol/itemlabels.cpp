@@ -15,6 +15,7 @@
 #include "inv.h"
 #include "options.h"
 #include "qol/stash.h"
+#include "stores.h"
 #include "utils/format_int.hpp"
 #include "utils/language.h"
 #include "utils/stdcompat/string_view.hpp"
@@ -26,12 +27,12 @@ namespace {
 struct ItemLabel {
 	int id, width;
 	Point pos;
-	std::string text;
+	StringOrView text;
 };
 
 std::vector<ItemLabel> labelQueue;
 
-bool altPressed = false;
+bool highlightKeyPressed = false;
 bool isLabelHighlighted = false;
 std::array<std::optional<int>, ITEMTYPES> labelCenterOffsets;
 
@@ -73,9 +74,9 @@ void ToggleItemLabelHighlight()
 	sgOptions.Gameplay.showItemLabels.SetValue(!*sgOptions.Gameplay.showItemLabels);
 }
 
-void AltPressed(bool pressed)
+void HighlightKeyPressed(bool pressed)
 {
-	altPressed = pressed;
+	highlightKeyPressed = pressed;
 }
 
 bool IsItemLabelHighlighted()
@@ -83,22 +84,27 @@ bool IsItemLabelHighlighted()
 	return isLabelHighlighted;
 }
 
-bool IsHighlightingLabelsEnabled()
+void ResetItemlabelHighlighted()
 {
-	return altPressed != *sgOptions.Gameplay.showItemLabels;
+	isLabelHighlighted = false;
 }
 
-void AddItemToLabelQueue(int id, int x, int y)
+bool IsHighlightingLabelsEnabled()
+{
+	return stextflag == TalkID::None && highlightKeyPressed != *sgOptions.Gameplay.showItemLabels;
+}
+
+void AddItemToLabelQueue(int id, Point position)
 {
 	if (!IsHighlightingLabelsEnabled())
 		return;
 	Item &item = Items[id];
 
-	std::string textOnGround;
+	StringOrView textOnGround;
 	if (item._itype == ItemType::Gold) {
 		textOnGround = fmt::format(fmt::runtime(_("{:s} gold")), FormatInteger(item._ivalue));
 	} else {
-		textOnGround = item._iIdentified ? item._iIName : item._iName;
+		textOnGround = item.getName();
 	}
 
 	int nameWidth = GetLineWidth(textOnGround);
@@ -109,14 +115,14 @@ void AddItemToLabelQueue(int id, int x, int y)
 		labelCenterOffsets[index].emplace((itemBounds.first + itemBounds.second) / 2);
 	}
 
-	x += *labelCenterOffsets[index];
-	y -= TILE_HEIGHT;
+	position.x += *labelCenterOffsets[index];
+	position.y -= TILE_HEIGHT;
 	if (*sgOptions.Graphics.zoom) {
-		x *= 2;
-		y *= 2;
+		position *= 2;
 	}
-	x -= nameWidth / 2;
-	labelQueue.push_back(ItemLabel { id, nameWidth, { x, y - Height }, textOnGround });
+	position.x -= nameWidth / 2;
+	position.y -= Height;
+	labelQueue.push_back(ItemLabel { id, nameWidth, position, std::move(textOnGround) });
 }
 
 bool IsMouseOverGameArea()
@@ -181,13 +187,18 @@ void DrawItemNameLabels(const Surface &out)
 		Item &item = Items[label.id];
 
 		if (MousePosition.x >= label.pos.x && MousePosition.x < label.pos.x + label.width && MousePosition.y >= label.pos.y + MarginY && MousePosition.y < label.pos.y + MarginY + Height) {
-			if (!gmenu_is_active() && PauseMode == 0 && !MyPlayerIsDead && IsMouseOverGameArea() && LastMouseButtonAction == MouseActionType::None) {
+			if (!gmenu_is_active()
+			    && PauseMode == 0
+			    && !MyPlayerIsDead
+			    && stextflag == TalkID::None
+			    && IsMouseOverGameArea()
+			    && LastMouseButtonAction == MouseActionType::None) {
 				isLabelHighlighted = true;
 				cursPosition = item.position;
 				pcursitem = label.id;
 			}
 		}
-		if (pcursitem == label.id)
+		if (pcursitem == label.id && stextflag == TalkID::None)
 			FillRect(clippedOut, label.pos.x, label.pos.y + MarginY, label.width, Height, PAL8_BLUE + 6);
 		else
 			DrawHalfTransparentRectTo(clippedOut, label.pos.x, label.pos.y + MarginY, label.width, Height);

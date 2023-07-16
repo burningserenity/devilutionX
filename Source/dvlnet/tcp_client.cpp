@@ -6,7 +6,6 @@
 #include <exception>
 #include <functional>
 #include <memory>
-#include <sstream>
 #include <stdexcept>
 #include <system_error>
 
@@ -52,6 +51,9 @@ int tcp_client::join(std::string addrstr)
 		for (auto i = 0; i < NoSleep; ++i) {
 			try {
 				poll();
+			} catch (const dvlnet_exception &e) {
+				SDL_SetError("Network error: %s", e.what());
+				return -1;
 			} catch (const std::runtime_error &e) {
 				SDL_SetError("%s", e.what());
 				return -1;

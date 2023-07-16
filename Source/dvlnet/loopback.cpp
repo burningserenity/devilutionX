@@ -1,5 +1,7 @@
 #include "dvlnet/loopback.h"
 
+#include <cstdint>
+
 #include "multi.h"
 #include "player.h"
 #include "utils/language.h"
@@ -10,6 +12,7 @@ namespace net {
 
 int loopback::create(std::string /*addrstr*/)
 {
+	IsLoopback = true;
 	return plr_single;
 }
 
@@ -85,6 +88,7 @@ bool loopback::SNetUnregisterEventHandler(event_type /*evtype*/)
 
 bool loopback::SNetLeaveGame(int /*type*/)
 {
+	IsLoopback = false;
 	return true;
 }
 
