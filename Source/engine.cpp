@@ -11,11 +11,11 @@
  * - Video playback
  */
 
-#include <array>
 #include <cassert>
 #include <cstdint>
 #include <cstring>
 
+#include "engine/palette.h"
 #include "lighting.h"
 #include "movie.h"
 #include "options.h"
@@ -26,7 +26,7 @@ namespace {
 void DrawHalfTransparentUnalignedBlendedRectTo(const Surface &out, unsigned sx, unsigned sy, unsigned width, unsigned height)
 {
 	uint8_t *pix = out.at(static_cast<int>(sx), static_cast<int>(sy));
-	const std::array<uint8_t, 256> &lookupTable = paletteTransparencyLookup[0];
+	const uint8_t *const lookupTable = paletteTransparencyLookup[0];
 	const unsigned skipX = out.pitch() - width;
 	for (unsigned y = 0; y < height; ++y) {
 		for (unsigned x = 0; x < width; ++x, ++pix) {
@@ -161,6 +161,15 @@ void DrawHalfTransparentRectTo(const Surface &out, int sx, int sy, int width, in
 	}
 
 	DrawHalfTransparentBlendedRectTo(out, sx, sy, width, height);
+}
+
+void SetHalfTransparentPixel(const Surface &out, Point position, uint8_t color)
+{
+	if (out.InBounds(position)) {
+		uint8_t *pix = out.at(position.x, position.y);
+		const auto &lookupTable = paletteTransparencyLookup[color];
+		*pix = lookupTable[*pix];
+	}
 }
 
 void UnsafeDrawBorder2px(const Surface &out, Rectangle rect, uint8_t color)

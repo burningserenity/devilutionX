@@ -757,8 +757,8 @@ void CreateBlock(int x, int y, int obs, int dir)
 	int x2;
 	int y2;
 
-	int blksizex = GenerateRnd(2) + 3;
-	int blksizey = GenerateRnd(2) + 3;
+	int blksizex = RandomIntBetween(3, 4);
+	int blksizey = RandomIntBetween(3, 4);
 
 	if (dir == 0) {
 		y2 = y - 1;
@@ -1102,10 +1102,10 @@ void River()
 				if (dungeon[rx][ry] == 7) {
 					dircheck = 0;
 					if (dir < 2) {
-						river[2][riveramt] = GenerateRnd(2) + 17;
+						river[2][riveramt] = PickRandomlyAmong({ 17, 18 });
 					}
 					if (dir > 1) {
-						river[2][riveramt] = GenerateRnd(2) + 15;
+						river[2][riveramt] = PickRandomlyAmong({ 15, 16 });
 					}
 					river[0][riveramt] = rx;
 					river[1][riveramt] = ry;
@@ -1502,12 +1502,12 @@ bool PlacePool()
 }
 
 /**
- * @brief Fill lava pools correctly, cause River() only generates the edges.
+ * @brief Fill lava pools correctly, because River() only generates the edges.
  */
 void PoolFix()
 {
 	for (Point tile : PointsInRectangle(Rectangle { { 1, 1 }, { DMAXX - 2, DMAXY - 2 } })) {
-		// Check if the tile is a the default dirt ceiling tile
+		// Check if the tile is the default dirt ceiling tile
 		if (dungeon[tile.x][tile.y] != 8)
 			continue;
 

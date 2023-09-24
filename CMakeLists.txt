@@ -106,6 +106,12 @@ option(MACOSX_STANDALONE_APP_BUNDLE "Generate a portable app bundle to use on ot
 cmake_dependent_option(DISABLE_TCP "Disable TCP multiplayer option" OFF "NOT NONET" ON)
 cmake_dependent_option(DISABLE_ZERO_TIER "Disable ZeroTier multiplayer option" OFF "NOT NONET" ON)
 
+# Graphics options
+if(NOT USE_SDL1)
+  set(DEVILUTIONX_DISPLAY_TEXTURE_FORMAT "SDL_PIXELFORMAT_RGB888" CACHE STRING "Texture format for DevilutionX textures when using the GPU renderer")
+  mark_as_advanced(DEVILUTIONX_DISPLAY_TEXTURE_FORMAT)
+endif()
+
 # Sound options
 option(NOSOUND "Disable sound support" OFF)
 option(DEVILUTIONX_RESAMPLER_SPEEX "Build with Speex resampler" ON)
@@ -147,6 +153,8 @@ mark_as_advanced(DEVILUTIONX_PALETTE_TRANSPARENCY_BLACK_16_LUT)
 # Additional features
 option(DISABLE_DEMOMODE "Disable demo mode support" OFF)
 option(DISCORD_INTEGRATION "Build with Discord SDK for rich presence support" OFF)
+option(SCREEN_READER_INTEGRATION "Build with screen reader support" OFF)
+mark_as_advanced(SCREEN_READER_INTEGRATION)
 
 # If both UNPACKED_MPQS and UNPACKED_SAVES are enabled, we completely remove MPQ support.
 if(UNPACKED_MPQS AND UNPACKED_SAVES)
@@ -156,7 +164,7 @@ else()
 endif()
 
 # By default, devilutionx.mpq is built only if smpq is installed and MPQ support is enabled.
-if(SUPPORTS_MPQ)
+if(SUPPORTS_MPQ AND NOT UNPACKED_MPQS)
   if(NOT DEFINED BUILD_ASSETS_MPQ AND NOT SRC_DIST)
     find_program(SMPQ smpq)
   elseif(BUILD_ASSETS_MPQ)
@@ -293,12 +301,9 @@ if(GPERF)
   endif()
 endif()
 
-# Despite setting C++ standard to 20, features from this version are not being used.
-# The oldest compiler used is GCC 6.5 - and that defines our C++ feature set (meaning most of C++17).
-# It's present only to take advantage of fmt::format build time errors.
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_EXTENSIONS OFF)
-set(CMAKE_CXX_STANDARD_REQUIRED OFF)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON) # for clang-tidy
 set(CMAKE_THREAD_PREFER_PTHREAD ON)
 set(THREADS_PREFER_PTHREAD_FLAG ON)
@@ -332,8 +337,7 @@ else()
       add_custom_command(
         TARGET ${BIN_TARGET} POST_BUILD
         DEPENDS ${BIN_TARGET}
-        COMMAND $<$<CONFIG:Release>:${CMAKE_STRIP}>
-                $<$<CONFIG:MinSizeRel>:${CMAKE_STRIP}>
+        COMMAND $<$<OR:$<CONFIG:Release>,$<CONFIG:MinSizeRel>>:${CMAKE_STRIP}>
         ARGS $<TARGET_FILE:${BIN_TARGET}>)
     endif()
 endif()
@@ -530,7 +534,7 @@ if(CPACK AND (APPLE OR BUILD_ASSETS_MPQ OR SRC_DIST))
       DESTINATION "."
     )
 
-    foreach(_SDL2_WIN32_DLL_PATH ${SDL2_WIN32_ALL_DLLS})
+    foreach(_SDL2_WIN32_DLL_PATH ${SDL2_WIN32_ALL_DLLS} ${WIN32_INSTALL_DLLS})
       install(FILES "${_SDL2_WIN32_DLL_PATH}"
         DESTINATION "."
       )
@@ -544,6 +548,12 @@ if(CPACK AND (APPLE OR BUILD_ASSETS_MPQ OR SRC_DIST))
 
     if(DISCORD_SHARED_LIB)
       install(FILES "${DISCORD_SHARED_LIB}"
+        DESTINATION "."
+      )
+    endif()
+
+    if(SCREEN_READER_INTEGRATION)
+      install(FILES "${Tolk_BINARY_DIR}/libTolk.dll"
         DESTINATION "."
       )
     endif()

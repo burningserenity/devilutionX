@@ -16,7 +16,6 @@
 #include <cstdint>
 #include <cstdlib>
 #include <memory>
-#include <tuple>
 #include <utility>
 
 // We include `cinttypes` here so that it is included before `inttypes.h`
@@ -25,6 +24,7 @@
 // defines for `PRIuMAX` et al. SDL transitively includes `inttypes.h`.
 // See https://gcc.gnu.org/bugzilla/show_bug.cgi?id=97044
 #include <cinttypes>
+#include <cstddef>
 
 #include <SDL.h>
 
@@ -36,50 +36,21 @@
 #include "engine/point.hpp"
 #include "engine/size.hpp"
 #include "engine/surface.hpp"
-#include "utils/stdcompat/cstddef.hpp"
-
-#define TILE_WIDTH 64
-#define TILE_HEIGHT 32
+#include "utils/attributes.h"
 
 namespace devilution {
 
-#if __cplusplus >= 201703L
 template <typename V, typename X, typename... Xs>
-constexpr bool IsAnyOf(const V &v, X x, Xs... xs)
+DVL_ALWAYS_INLINE constexpr bool IsAnyOf(const V &v, X x, Xs... xs)
 {
 	return v == x || ((v == xs) || ...);
 }
 
 template <typename V, typename X, typename... Xs>
-constexpr bool IsNoneOf(const V &v, X x, Xs... xs)
+DVL_ALWAYS_INLINE constexpr bool IsNoneOf(const V &v, X x, Xs... xs)
 {
 	return v != x && ((v != xs) && ...);
 }
-#else
-template <typename V, typename X>
-constexpr bool IsAnyOf(const V &v, X x)
-{
-	return v == x;
-}
-
-template <typename V, typename X, typename... Xs>
-constexpr bool IsAnyOf(const V &v, X x, Xs... xs)
-{
-	return IsAnyOf(v, x) || IsAnyOf(v, xs...);
-}
-
-template <typename V, typename X>
-constexpr bool IsNoneOf(const V &v, X x)
-{
-	return v != x;
-}
-
-template <typename V, typename X, typename... Xs>
-constexpr bool IsNoneOf(const V &v, X x, Xs... xs)
-{
-	return IsNoneOf(v, x) && IsNoneOf(v, xs...);
-}
-#endif
 
 /**
  * @brief Draw a horizontal line segment in the target buffer (left to right)
@@ -117,6 +88,16 @@ void UnsafeDrawVerticalLine(const Surface &out, Point from, int height, std::uin
  * @param height Rectangle height
  */
 void DrawHalfTransparentRectTo(const Surface &out, int sx, int sy, int width, int height);
+
+/**
+ * Draws a half-transparent pixel
+ *
+ * @brief Render a transparent pixel
+ * @param out Target buffer
+ * @param position Screen coordinates
+ * @param col Pixel color
+ */
+void SetHalfTransparentPixel(const Surface &out, Point position, uint8_t color);
 
 /**
  * Draws a 2px inset border.

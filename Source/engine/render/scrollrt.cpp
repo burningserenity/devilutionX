@@ -5,6 +5,7 @@
  */
 #include "engine/render/scrollrt.h"
 
+#include <cmath>
 #include <cstdint>
 
 #include "DiabloUI/ui_flags.hpp"
@@ -19,6 +20,7 @@
 #include "engine/render/dun_render.hpp"
 #include "engine/render/text_render.hpp"
 #include "engine/trn.hpp"
+#include "engine/world_tile.hpp"
 #include "error.h"
 #include "gmenu.h"
 #include "help.h"
@@ -75,19 +77,9 @@ bool frameflag;
 namespace {
 
 /**
- * @brief Hash algorithm for point
- */
-struct PointHash {
-	std::size_t operator()(Point const &s) const noexcept
-	{
-		return s.x ^ (s.y << 1);
-	}
-};
-
-/**
  * @brief Contains all Missile at rendering position
  */
-std::unordered_multimap<Point, Missile *, PointHash> MissilesAtRenderingTile;
+std::unordered_multimap<WorldTilePosition, Missile *> MissilesAtRenderingTile;
 
 /**
  * @brief Could the missile (at the next game tick) collide? This method is a simplified version of CheckMissileCol (for example without random).
@@ -171,27 +163,7 @@ void UpdateMissilesRendererData()
 	}
 }
 
-/**
- * @brief Keeps track of which tiles have been rendered already.
- */
-Bitset2d<MAXDUNX, MAXDUNY> dRendered;
-
 int lastFpsUpdateInMs;
-
-const char *const PlayerModeNames[] = {
-	"standing",
-	"walking (1)",
-	"walking (2)",
-	"walking (3)",
-	"attacking (melee)",
-	"attacking (ranged)",
-	"blocking",
-	"getting hit",
-	"dying",
-	"casting a spell",
-	"changing levels",
-	"quitting"
-};
 
 Rectangle PrevCursorRect;
 
@@ -263,13 +235,15 @@ void DrawCursor(const Surface &out)
 
 	// Copy the buffer before the item cursor and its 1px outline are drawn to a temporary buffer.
 	const int outlineWidth = !MyPlayer->HoldItem.isEmpty() ? 1 : 0;
+	Displacement offset = !MyPlayer->HoldItem.isEmpty() ? Displacement { cursSize / 2 } : Displacement { 0 };
+	Point cursPosition = MousePosition - offset;
 
 	Rectangle &rect = cursor.rect;
-	rect.position.x = MousePosition.x - outlineWidth;
+	rect.position.x = cursPosition.x - outlineWidth;
 	rect.size.width = cursSize.width + 2 * outlineWidth;
 	Clip(rect.position.x, rect.size.width, out.w());
 
-	rect.position.y = MousePosition.y - outlineWidth;
+	rect.position.y = cursPosition.y - outlineWidth;
 	rect.size.height = cursSize.height + 2 * outlineWidth;
 	Clip(rect.position.y, rect.size.height, out.h());
 
@@ -277,7 +251,7 @@ void DrawCursor(const Surface &out)
 		return;
 
 	BlitCursor(cursor.behindBuffer, rect.size.width, &out[rect.position], out.pitch(), rect.size.width, rect.size.height);
-	DrawSoftwareCursor(out, MousePosition + Displacement { 0, cursSize.height - 1 }, pcurs);
+	DrawSoftwareCursor(out, cursPosition + Displacement { 0, cursSize.height - 1 }, pcurs);
 }
 
 /**
@@ -309,10 +283,10 @@ void DrawMissilePrivate(const Surface &out, const Missile &missile, Point target
  * @param targetBufferPosition Output buffer coordinates
  * @param pre Is the sprite in the background
  */
-void DrawMissile(const Surface &out, Point tilePosition, Point targetBufferPosition, bool pre)
+void DrawMissile(const Surface &out, WorldTilePosition tilePosition, Point targetBufferPosition, bool pre)
 {
-	const auto range = MissilesAtRenderingTile.equal_range(tilePosition);
-	for (auto it = range.first; it != range.second; it++) {
+	const auto [begin, end] = MissilesAtRenderingTile.equal_range(tilePosition);
+	for (auto it = begin; it != end; ++it) {
 		DrawMissilePrivate(out, *it->second, targetBufferPosition, pre);
 	}
 }
@@ -353,8 +327,13 @@ void DrawMonster(const Surface &out, Point tilePosition, Point targetBufferPosit
 /**
  * @brief Helper for rendering a specific player icon (Mana Shield or Reflect)
  */
-void DrawPlayerIconHelper(const Surface &out, MissileGraphicID missileGraphicId, Point position, bool lighting, bool infraVision)
+void DrawPlayerIconHelper(const Surface &out, MissileGraphicID missileGraphicId, Point position, const Player &player, bool infraVision)
 {
+	bool lighting = &player != MyPlayer;
+
+	if (player.isWalking())
+		position += GetOffsetForWalking(player.AnimInfo, player._pdir);
+
 	position.x -= GetMissileSpriteData(missileGraphicId).animWidth2;
 
 	const ClxSprite sprite = (*GetMissileSpriteData(missileGraphicId).sprites).list()[0];
@@ -382,9 +361,9 @@ void DrawPlayerIconHelper(const Surface &out, MissileGraphicID missileGraphicId,
 void DrawPlayerIcons(const Surface &out, const Player &player, Point position, bool infraVision)
 {
 	if (player.pManaShield)
-		DrawPlayerIconHelper(out, MissileGraphicID::ManaShield, position, &player != MyPlayer, infraVision);
+		DrawPlayerIconHelper(out, MissileGraphicID::ManaShield, position, player, infraVision);
 	if (player.wReflections > 0)
-		DrawPlayerIconHelper(out, MissileGraphicID::Reflect, position + Displacement { 0, 16 }, &player != MyPlayer, infraVision);
+		DrawPlayerIconHelper(out, MissileGraphicID::Reflect, position + Displacement { 0, 16 }, player, infraVision);
 }
 
 /**
@@ -400,9 +379,8 @@ void DrawPlayer(const Surface &out, const Player &player, Point tilePosition, Po
 		return;
 	}
 
-	const ClxSprite sprite = player.previewCelSprite ? *player.previewCelSprite : player.AnimInfo.currentSprite();
-
-	Point spriteBufferPosition = targetBufferPosition - Displacement { CalculateWidth2(sprite.width()), 0 };
+	const ClxSprite sprite = player.currentSprite();
+	Point spriteBufferPosition = targetBufferPosition + player.getRenderingOffset(sprite);
 
 	if (static_cast<size_t>(pcursplr) < Players.size() && &player == &Players[pcursplr])
 		ClxDrawOutlineSkipColorZero(out, 165, spriteBufferPosition, sprite);
@@ -453,34 +431,16 @@ void DrawDeadPlayer(const Surface &out, Point tilePosition, Point targetBufferPo
 /**
  * @brief Render an object sprite
  * @param out Output buffer
+ * @param objectToDraw Dungeone object to draw
  * @param tilePosition dPiece coordinates
  * @param targetBufferPosition Output buffer coordinates
  * @param pre Is the sprite in the background
  */
-void DrawObject(const Surface &out, Point tilePosition, Point targetBufferPosition, bool pre)
+void DrawObject(const Surface &out, const Object &objectToDraw, Point tilePosition, Point targetBufferPosition)
 {
-	if (LightTableIndex >= LightsMax) {
-		return;
-	}
+	const ClxSprite sprite = objectToDraw.currentSprite();
 
-	Object *object = FindObjectAtPosition(tilePosition);
-	if (object == nullptr) {
-		return;
-	}
-
-	const Object &objectToDraw = *object;
-	if (objectToDraw._oPreFlag != pre) {
-		return;
-	}
-
-	const ClxSprite sprite = (*objectToDraw._oAnimData)[objectToDraw._oAnimFrame - 1];
-
-	Point screenPosition = targetBufferPosition - Displacement { CalculateWidth2(sprite.width()), 0 };
-	if (objectToDraw.position != tilePosition) {
-		// drawing a large or offset object, calculate the correct position for the center of the sprite
-		Displacement worldOffset = objectToDraw.position - tilePosition;
-		screenPosition -= worldOffset.worldToScreen();
-	}
+	const Point screenPosition = targetBufferPosition + objectToDraw.getRenderingOffset(sprite, tilePosition);
 
 	if (&objectToDraw == ObjectUnderCursor) {
 		ClxDrawOutlineSkipColorZero(out, 194, screenPosition, sprite);
@@ -647,26 +607,17 @@ void DrawFloor(const Surface &out, Point tilePosition, Point targetBufferPositio
  * @param targetBufferPosition Output buffer coordinates
  * @param pre Is the sprite in the background
  */
-void DrawItem(const Surface &out, Point tilePosition, Point targetBufferPosition, bool pre)
+void DrawItem(const Surface &out, int8_t itemIndex, Point targetBufferPosition)
 {
-	int8_t bItem = dItem[tilePosition.x][tilePosition.y];
-
-	if (bItem <= 0)
-		return;
-
-	auto &item = Items[bItem - 1];
-	if (item._iPostDraw == pre)
-		return;
-
+	const Item &item = Items[itemIndex];
 	const ClxSprite sprite = item.AnimInfo.currentSprite();
-	int px = targetBufferPosition.x - CalculateWidth2(sprite.width());
-	const Point position { px, targetBufferPosition.y };
-	if (stextflag == TalkID::None && (bItem - 1 == pcursitem || AutoMapShowItems)) {
+	const Point position = targetBufferPosition + item.getRenderingOffset(sprite);
+	if (stextflag == TalkID::None && (itemIndex == pcursitem || AutoMapShowItems)) {
 		ClxDrawOutlineSkipColorZero(out, GetOutlineColor(item, false), position, sprite);
 	}
 	ClxDrawLight(out, position, sprite);
 	if (item.AnimInfo.isLastFrame() || item._iCurs == ICURS_MAGIC_ROCK)
-		AddItemToLabelQueue(bItem - 1, position);
+		AddItemToLabelQueue(itemIndex, position);
 }
 
 /**
@@ -679,14 +630,13 @@ void DrawMonsterHelper(const Surface &out, Point tilePosition, Point targetBuffe
 {
 	int mi = dMonster[tilePosition.x][tilePosition.y];
 	bool isNegativeMonster = mi < 0;
-	mi = abs(mi) - 1;
+	mi = std::abs(mi) - 1;
 
 	if (leveltype == DTYPE_TOWN) {
 		if (isNegativeMonster)
 			return;
 		auto &towner = Towners[mi];
-		int px = targetBufferPosition.x - CalculateWidth2(towner._tAnimWidth);
-		const Point position { px, targetBufferPosition.y };
+		const Point position = targetBufferPosition + towner.getRenderingOffset();
 		const ClxSprite sprite = towner.currentSprite();
 		if (mi == pcursmonst) {
 			ClxDrawOutlineSkipColorZero(out, 166, position, sprite);
@@ -710,21 +660,20 @@ void DrawMonsterHelper(const Surface &out, Point tilePosition, Point targetBuffe
 
 	const ClxSprite sprite = monster.animInfo.currentSprite();
 
-	Displacement offset = {};
+	Displacement offset = monster.getRenderingOffset(sprite);
 	if (monster.isWalking()) {
 		bool isSideWalkingToLeft = monster.mode == MonsterMode::MoveSideways && monster.direction == Direction::West;
 		if (isNegativeMonster && !isSideWalkingToLeft)
 			return;
 		if (!isNegativeMonster && isSideWalkingToLeft)
 			return;
-		offset = GetOffsetForWalking(monster.animInfo, monster.direction);
 		if (isSideWalkingToLeft)
 			offset -= Displacement { 64, 0 };
 	} else if (isNegativeMonster) {
 		return;
 	}
 
-	const Point monsterRenderPosition { targetBufferPosition + offset - Displacement { CalculateWidth2(sprite.width()), 0 } };
+	const Point monsterRenderPosition = targetBufferPosition + offset;
 	if (mi == pcursmonst) {
 		ClxDrawOutlineSkipColorZero(out, 233, monsterRenderPosition, sprite);
 	}
@@ -740,14 +689,7 @@ void DrawMonsterHelper(const Surface &out, Point tilePosition, Point targetBuffe
  */
 void DrawPlayerHelper(const Surface &out, const Player &player, Point tilePosition, Point targetBufferPosition)
 {
-	Displacement offset = {};
-	if (player.isWalking()) {
-		offset = GetOffsetForWalking(player.AnimInfo, player._pdir);
-	}
-
-	const Point playerRenderPosition { targetBufferPosition + offset };
-
-	DrawPlayer(out, player, tilePosition, playerRenderPosition);
+	DrawPlayer(out, player, tilePosition, targetBufferPosition);
 }
 
 /**
@@ -759,17 +701,12 @@ void DrawPlayerHelper(const Surface &out, const Player &player, Point tilePositi
 void DrawDungeon(const Surface &out, Point tilePosition, Point targetBufferPosition)
 {
 	assert(InDungeonBounds(tilePosition));
-
-	if (dRendered.test(tilePosition.x, tilePosition.y))
-		return;
-	dRendered.set(tilePosition.x, tilePosition.y);
-
 	LightTableIndex = dLight[tilePosition.x][tilePosition.y];
 
 	DrawCell(out, tilePosition, targetBufferPosition);
 
-	int8_t bDead = dCorpse[tilePosition.x][tilePosition.y];
-	int8_t bMap = dTransVal[tilePosition.x][tilePosition.y];
+	const int8_t bDead = dCorpse[tilePosition.x][tilePosition.y];
+	const int8_t bMap = dTransVal[tilePosition.x][tilePosition.y];
 
 #ifdef _DEBUG
 	if (DebugVision && IsTileLit(tilePosition)) {
@@ -782,7 +719,7 @@ void DrawDungeon(const Surface &out, Point tilePosition, Point targetBufferPosit
 	}
 
 	if (LightTableIndex < LightsMax && bDead != 0) {
-		Corpse &corpse = Corpses[(bDead & 0x1F) - 1];
+		const Corpse &corpse = Corpses[(bDead & 0x1F) - 1];
 		const Point position { targetBufferPosition.x - CalculateWidth2(corpse.width), targetBufferPosition.y };
 		const ClxSprite sprite = corpse.spritesForDirection(static_cast<Direction>((bDead >> 5) & 7))[corpse.frame];
 		if (corpse.translationPaletteIndex != 0) {
@@ -792,8 +729,17 @@ void DrawDungeon(const Surface &out, Point tilePosition, Point targetBufferPosit
 			ClxDrawLight(out, position, sprite);
 		}
 	}
-	DrawObject(out, tilePosition, targetBufferPosition, true);
-	DrawItem(out, tilePosition, targetBufferPosition, true);
+
+	const int8_t bItem = dItem[tilePosition.x][tilePosition.y];
+	const Object *object = LightTableIndex < LightsMax
+	    ? FindObjectAtPosition(tilePosition)
+	    : nullptr;
+	if (object != nullptr && object->_oPreFlag) {
+		DrawObject(out, *object, tilePosition, targetBufferPosition);
+	}
+	if (bItem > 0 && !Items[bItem - 1]._iPostDraw) {
+		DrawItem(out, static_cast<int8_t>(bItem - 1), targetBufferPosition);
+	}
 
 	if (TileContainsDeadPlayer(tilePosition)) {
 		DrawDeadPlayer(out, tilePosition, targetBufferPosition);
@@ -806,8 +752,13 @@ void DrawDungeon(const Surface &out, Point tilePosition, Point targetBufferPosit
 		DrawMonsterHelper(out, tilePosition, targetBufferPosition);
 	}
 	DrawMissile(out, tilePosition, targetBufferPosition, false);
-	DrawObject(out, tilePosition, targetBufferPosition, false);
-	DrawItem(out, tilePosition, targetBufferPosition, false);
+
+	if (object != nullptr && !object->_oPreFlag) {
+		DrawObject(out, *object, tilePosition, targetBufferPosition);
+	}
+	if (bItem > 0 && Items[bItem - 1]._iPostDraw) {
+		DrawItem(out, static_cast<int8_t>(bItem - 1), targetBufferPosition);
+	}
 
 	if (leveltype != DTYPE_TOWN) {
 		char bArch = dSpecial[tilePosition.x][tilePosition.y];
@@ -875,7 +826,7 @@ void DrawFloor(const Surface &out, Point tilePosition, Point targetBufferPositio
 	}
 }
 
-bool IsWall(Point position)
+[[nodiscard]] DVL_ALWAYS_INLINE bool IsWall(Point position)
 {
 	return TileHasAny(dPiece[position.x][position.y], TileProperties::Solid) || dSpecial[position.x][position.y] != 0;
 }
@@ -892,11 +843,12 @@ void DrawTileContent(const Surface &out, Point tilePosition, Point targetBufferP
 {
 	// Keep evaluating until MicroTiles can't affect screen
 	rows += MicroTileLen;
-	dRendered.reset();
 
 	for (int i = 0; i < rows; i++) {
+		bool skip = false;
 		for (int j = 0; j < columns; j++) {
 			if (InDungeonBounds(tilePosition)) {
+				bool skipNext = false;
 #ifdef _DEBUG
 				DebugCoordsMap[tilePosition.x + tilePosition.y * MAXDUNX] = targetBufferPosition;
 #endif
@@ -908,10 +860,14 @@ void DrawTileContent(const Surface &out, Point tilePosition, Point targetBufferP
 					if (IsWall(tilePosition) && (IsWall(tilePosition + Displacement { 1, 0 }) || (tilePosition.x > 0 && IsWall(tilePosition + Displacement { -1, 0 })))) { // Part of a wall aligned on the x-axis
 						if (IsTileNotSolid(tilePosition + Displacement { 1, -1 }) && IsTileNotSolid(tilePosition + Displacement { 0, -1 })) {                              // Has walkable area behind it
 							DrawDungeon(out, tilePosition + Direction::East, { targetBufferPosition.x + TILE_WIDTH, targetBufferPosition.y });
+							skipNext = true;
 						}
 					}
 				}
-				DrawDungeon(out, tilePosition, targetBufferPosition);
+				if (!skip) {
+					DrawDungeon(out, tilePosition, targetBufferPosition);
+				}
+				skip = skipNext;
 			}
 			tilePosition += Direction::East;
 			targetBufferPosition.x += TILE_WIDTH;
@@ -1101,12 +1057,11 @@ void DrawGame(const Surface &fullOut, Point position, Displacement offset)
 
 #ifdef DUN_RENDER_STATS
 	std::vector<std::pair<DunRenderType, size_t>> sortedStats(DunRenderStats.begin(), DunRenderStats.end());
-	std::sort(sortedStats.begin(), sortedStats.end(),
-	    [](const std::pair<DunRenderType, size_t> &a, const std::pair<DunRenderType, size_t> &b) {
-		    return a.first.maskType == b.first.maskType
-		        ? static_cast<uint8_t>(a.first.tileType) < static_cast<uint8_t>(b.first.tileType)
-		        : static_cast<uint8_t>(a.first.maskType) < static_cast<uint8_t>(b.first.maskType);
-	    });
+	c_sort(sortedStats, [](const std::pair<DunRenderType, size_t> &a, const std::pair<DunRenderType, size_t> &b) {
+		return a.first.maskType == b.first.maskType
+		    ? static_cast<uint8_t>(a.first.tileType) < static_cast<uint8_t>(b.first.tileType)
+		    : static_cast<uint8_t>(a.first.maskType) < static_cast<uint8_t>(b.first.maskType);
+	});
 	Point pos { 100, 20 };
 	for (size_t i = 0; i < sortedStats.size(); ++i) {
 		const auto &stat = sortedStats[i];
@@ -1143,11 +1098,10 @@ void DrawView(const Surface &out, Point startPosition)
 		char debugGridTextBuffer[10];
 		bool megaTiles = IsDebugGridInMegatiles();
 
-		for (auto m : DebugCoordsMap) {
-			Point dunCoords = { m.first % MAXDUNX, m.first / MAXDUNX };
+		for (auto [dunCoordVal, pixelCoords] : DebugCoordsMap) {
+			Point dunCoords = { dunCoordVal % MAXDUNX, dunCoordVal / MAXDUNX };
 			if (megaTiles && (dunCoords.x % 2 == 1 || dunCoords.y % 2 == 1))
 				continue;
-			Point pixelCoords = m.second;
 			if (megaTiles)
 				pixelCoords += Displacement { 0, TILE_HEIGHT / 2 };
 			if (*sgOptions.Graphics.zoom)
@@ -1163,7 +1117,7 @@ void DrawView(const Surface &out, Point startPosition)
 					auto DrawLine = [&out](Point from, Point to, uint8_t col) {
 						int dx = to.x - from.x;
 						int dy = to.y - from.y;
-						int steps = abs(dx) > abs(dy) ? abs(dx) : abs(dy);
+						int steps = std::abs(dx) > std::abs(dy) ? std::abs(dx) : std::abs(dy);
 						float ix = dx / (float)steps;
 						float iy = dy / (float)steps;
 						float sx = from.x;
@@ -1264,7 +1218,7 @@ void DrawView(const Surface &out, Point startPosition)
 void DrawFPS(const Surface &out)
 {
 	static int framesSinceLastUpdate = 0;
-	static string_view formatted {};
+	static std::string_view formatted {};
 
 	if (!frameflag || !gbActive) {
 		return;
@@ -1283,7 +1237,7 @@ void DrawFPS(const Surface &out)
 		const char *end = fps >= 100 * FpsPow10
 		    ? BufCopy(buf, fps / FpsPow10, " FPS")
 		    : BufCopy(buf, fps / FpsPow10, ".", fps % FpsPow10, " FPS");
-		formatted = { buf, static_cast<string_view::size_type>(end - buf) };
+		formatted = { buf, static_cast<std::string_view::size_type>(end - buf) };
 	};
 	DrawString(out, formatted, Point { 8, 68 }, UiFlags::ColorRed);
 }
@@ -1519,6 +1473,20 @@ void CalcViewportGeometry()
 	const Point renderStart = startPosition - Displacement { TILE_WIDTH / 2, TILE_HEIGHT / 2 };
 	tileRows = (viewportHeight - renderStart.y + TILE_HEIGHT / 2 - 1) / (TILE_HEIGHT / 2);
 	tileColums = (screenWidth - renderStart.x + TILE_WIDTH - 1) / TILE_WIDTH;
+}
+
+Point GetScreenPosition(Point tile)
+{
+	Point firstTile = ViewPosition;
+	Displacement offset = {};
+	CalcFirstTilePosition(firstTile, offset);
+
+	Displacement delta = firstTile - tile;
+
+	Point position {};
+	position += delta.worldToScreen();
+	position += offset;
+	return position;
 }
 
 extern SDL_Surface *PalSurface;

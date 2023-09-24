@@ -1,6 +1,6 @@
 #include "./console.h"
 
-#if (defined(_WIN64) || defined(_WIN32)) && !defined(NXDK)
+#if defined(_WIN32) && !defined(DEVILUTIONX_WINDOWS_NO_WCHAR)
 #include <cstddef>
 #include <cstdio>
 #include <string>
@@ -25,7 +25,7 @@ HANDLE GetStderrHandle()
 	return handle;
 }
 
-void WriteToStderr(string_view str)
+void WriteToStderr(std::string_view str)
 {
 	HANDLE handle = GetStderrHandle();
 	if (handle == NULL)
@@ -35,7 +35,7 @@ void WriteToStderr(string_view str)
 
 } // namespace
 
-void printInConsole(string_view str)
+void printInConsole(std::string_view str)
 {
 	OutputDebugString(std::string(str).c_str());
 	WriteToStderr(str);
@@ -72,7 +72,7 @@ void vprintfInConsole(const char *fmt, va_list ap)
 
 namespace devilution {
 
-void printInConsole(string_view str)
+void printInConsole(std::string_view str)
 {
 	std::fwrite(str.data(), sizeof(char), str.size(), stderr);
 }
