@@ -61,7 +61,7 @@ jobs:
           --slave /usr/bin/ld.lld ld.lld /usr/bin/ld.lld-18
 
     - name: Cache CMake build folder
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       with:
         path: build
         key: ${{ github.workflow }}-v6-${{ github.sha }}
@@ -89,7 +89,7 @@ jobs:
 
     - name: Upload Package
       if: ${{ !env.ACT }}
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: devilutionx-aarch64-linux-gnu.tar.xz
         path: devilutionx-aarch64-linux-gnu.tar.xz
@@ -97,7 +97,7 @@ jobs:
     # AppImage cross-packaging is not implemented yet.
     # - name: Upload AppImage
     #   if: ${{ !env.ACT }}
-    #   uses: actions/upload-artifact@v3
+    #   uses: actions/upload-artifact@v4
     #   with:
     #     name: devilutionx-aarch64-linux-gnu.appimage
     #     path: devilutionx-aarch64-linux-gnu.appimage

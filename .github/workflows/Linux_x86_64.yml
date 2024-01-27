@@ -50,7 +50,7 @@ jobs:
       run: Packaging/nix/debian-host-prep.sh --no-gcc
 
     - name: Cache CMake build folder
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       with:
         path: build
         key: ${{ github.workflow }}-v5-${{ github.sha }}
@@ -76,14 +76,14 @@ jobs:
 
     - name: Upload Package
       if: ${{ !env.ACT }}
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: devilutionx-x86_64-linux-gnu.tar.xz
         path: devilutionx-x86_64-linux-gnu.tar.xz
 
     - name: Upload AppImage
       if: ${{ !env.ACT }}
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: devilutionx-x86_64-linux-gnu.appimage
         path: devilutionx-x86_64-linux-gnu.appimage

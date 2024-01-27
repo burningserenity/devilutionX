@@ -13,6 +13,7 @@
 #include "controls/plrctrls.h"
 #include "cursor.h"
 #include "dead.h"
+#include "diablo_msg.hpp"
 #include "doom.h"
 #include "engine/backbuffer_state.hpp"
 #include "engine/dx.h"
@@ -21,18 +22,20 @@
 #include "engine/render/text_render.hpp"
 #include "engine/trn.hpp"
 #include "engine/world_tile.hpp"
-#include "error.h"
 #include "gmenu.h"
 #include "help.h"
 #include "hwcursor.hpp"
 #include "init.h"
 #include "inv.h"
 #include "lighting.h"
+#include "lua/lua.hpp"
 #include "minitext.h"
 #include "missiles.h"
 #include "nthread.h"
 #include "options.h"
 #include "panels/charpanel.hpp"
+#include "panels/console.hpp"
+#include "panels/spell_list.hpp"
 #include "plrmsg.h"
 #include "qol/chatlog.h"
 #include "qol/floatingnumbers.h"
@@ -382,7 +385,7 @@ void DrawPlayer(const Surface &out, const Player &player, Point tilePosition, Po
 	const ClxSprite sprite = player.currentSprite();
 	Point spriteBufferPosition = targetBufferPosition + player.getRenderingOffset(sprite);
 
-	if (static_cast<size_t>(pcursplr) < Players.size() && &player == &Players[pcursplr])
+	if (&player == PlayerUnderCursor)
 		ClxDrawOutlineSkipColorZero(out, 165, spriteBufferPosition, sprite);
 
 	if (&player == MyPlayer && IsNoneOf(leveltype, DTYPE_NEST, DTYPE_CRYPT)) {
@@ -1065,10 +1068,10 @@ void DrawGame(const Surface &fullOut, Point position, Displacement offset)
 	Point pos { 100, 20 };
 	for (size_t i = 0; i < sortedStats.size(); ++i) {
 		const auto &stat = sortedStats[i];
-		DrawString(out, StrCat(i, "."), Rectangle(pos, Size { 20, 16 }), UiFlags::AlignRight);
+		DrawString(out, StrCat(i, "."), Rectangle(pos, Size { 20, 16 }), { .flags = UiFlags::AlignRight });
 		DrawString(out, MaskTypeToString(stat.first.maskType), { pos.x + 24, pos.y });
 		DrawString(out, TileTypeToString(stat.first.tileType), { pos.x + 184, pos.y });
-		DrawString(out, FormatInteger(stat.second), Rectangle({ pos.x + 354, pos.y }, Size(40, 16)), UiFlags::AlignRight);
+		DrawString(out, FormatInteger(stat.second), Rectangle({ pos.x + 354, pos.y }, Size(40, 16)), { .flags = UiFlags::AlignRight });
 		pos.y += 16;
 	}
 #endif
@@ -1110,7 +1113,8 @@ void DrawView(const Surface &out, Point startPosition)
 				Size tileSize = { TILE_WIDTH, TILE_HEIGHT };
 				if (*sgOptions.Graphics.zoom)
 					tileSize *= 2;
-				DrawString(out, debugGridTextBuffer, { pixelCoords - Displacement { 0, tileSize.height }, tileSize }, UiFlags::ColorRed | UiFlags::AlignCenter | UiFlags::VerticalCenter);
+				DrawString(out, debugGridTextBuffer, { pixelCoords - Displacement { 0, tileSize.height }, tileSize },
+				    { .flags = UiFlags::ColorRed | UiFlags::AlignCenter | UiFlags::VerticalCenter });
 			}
 			if (DebugGrid) {
 				auto DrawDebugSquare = [&out](Point center, Displacement hor, Displacement ver, uint8_t col) {
@@ -1120,8 +1124,8 @@ void DrawView(const Surface &out, Point startPosition)
 						int steps = std::abs(dx) > std::abs(dy) ? std::abs(dx) : std::abs(dy);
 						float ix = dx / (float)steps;
 						float iy = dy / (float)steps;
-						float sx = from.x;
-						float sy = from.y;
+						float sx = static_cast<float>(from.x);
+						float sy = static_cast<float>(from.y);
 
 						for (int i = 0; i <= steps; i++, sx += ix, sy += iy)
 							out.SetPixel({ (int)sx, (int)sy }, col);
@@ -1184,9 +1188,9 @@ void DrawView(const Surface &out, Point startPosition)
 		DrawSpellList(out);
 	}
 	if (dropGoldFlag) {
-		DrawGoldSplit(out, dropGoldValue);
+		DrawGoldSplit(out);
 	}
-	DrawGoldWithdraw(out, WithdrawGoldValue);
+	DrawGoldWithdraw(out);
 	if (HelpFlag) {
 		DrawHelp(out);
 	}
@@ -1194,7 +1198,7 @@ void DrawView(const Surface &out, Point startPosition)
 		DrawChatLog(out);
 	}
 	if (IsDiabloMsgAvailable()) {
-		DrawDiabloMsg(out);
+		DrawDiabloMsg(out.subregionY(0, out.h() - GetMainPanel().size.height));
 	}
 	if (MyPlayerIsDead) {
 		RedBack(out);
@@ -1239,7 +1243,7 @@ void DrawFPS(const Surface &out)
 		    : BufCopy(buf, fps / FpsPow10, ".", fps % FpsPow10, " FPS");
 		formatted = { buf, static_cast<std::string_view::size_type>(end - buf) };
 	};
-	DrawString(out, formatted, Point { 8, 68 }, UiFlags::ColorRed);
+	DrawString(out, formatted, Point { 8, 68 }, { .flags = UiFlags::ColorRed });
 }
 
 /**
@@ -1295,7 +1299,8 @@ void DrawMain(const Surface &out, int dwHgt, bool drawDesc, bool drawHp, bool dr
 				// When chat input is displayed, the belt is hidden and the chat moves up.
 				DoBlitScreen(mainPanelPosition.x + 171, mainPanelPosition.y + 6, 298, 116);
 			} else {
-				DoBlitScreen(mainPanelPosition.x + 176, mainPanelPosition.y + 46, 288, 63);
+				DoBlitScreen(mainPanelPosition.x + InfoBoxTopLeft.deltaX, mainPanelPosition.y + InfoBoxTopLeft.deltaY,
+				    InfoBoxSize.width, InfoBoxSize.height);
 			}
 		}
 		if (drawMana) {
@@ -1654,7 +1659,13 @@ void DrawAndBlit()
 
 	DrawFPS(out);
 
+	LuaEvent("GameDrawComplete");
+
 	DrawMain(out, hgt, drawInfoBox, drawHealth, drawMana, drawBelt, drawControlButtons);
+
+#ifdef _DEBUG
+	DrawConsole(out);
+#endif
 
 	RedrawComplete();
 	for (PanelDrawComponent component : enum_values<PanelDrawComponent>()) {

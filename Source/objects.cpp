@@ -18,12 +18,12 @@
 #ifdef _DEBUG
 #include "debug.h"
 #endif
+#include "diablo_msg.hpp"
 #include "engine/backbuffer_state.hpp"
 #include "engine/load_cel.hpp"
 #include "engine/load_file.hpp"
 #include "engine/points_in_rectangle_range.hpp"
 #include "engine/random.hpp"
-#include "error.h"
 #include "init.h"
 #include "inv.h"
 #include "inv_iterators.hpp"
@@ -559,20 +559,18 @@ void LoadMapObjects(const char *path, Point start, WorldTileRectangle mapRange =
 
 	auto dunData = LoadFileInMem<uint16_t>(path);
 
-	int width = SDL_SwapLE16(dunData[0]);
-	int height = SDL_SwapLE16(dunData[1]);
+	WorldTileSize size = GetDunSize(dunData.get());
 
-	int layer2Offset = 2 + width * height;
+	int layer2Offset = 2 + size.width * size.height;
 
 	// The rest of the layers are at dPiece scale
-	width *= 2;
-	height *= 2;
+	size *= static_cast<WorldTileCoord>(2);
 
-	const uint16_t *objectLayer = &dunData[layer2Offset + width * height * 2];
+	const uint16_t *objectLayer = &dunData[layer2Offset + size.width * size.height * 2];
 
-	for (int j = 0; j < height; j++) {
-		for (int i = 0; i < width; i++) {
-			auto objectId = static_cast<uint8_t>(SDL_SwapLE16(objectLayer[j * width + i]));
+	for (WorldTileCoord j = 0; j < size.height; j++) {
+		for (WorldTileCoord i = 0; i < size.width; i++) {
+			auto objectId = static_cast<uint8_t>(SDL_SwapLE16(objectLayer[j * size.width + i]));
 			if (objectId != 0) {
 				Point mapPos = start + Displacement { i, j };
 				Object *mapObject = AddObject(ObjTypeConv[objectId], mapPos);
@@ -684,7 +682,7 @@ void SetupObject(Object &object, Point position, _object_id ot)
 			return;
 		}
 
-		const int j = std::distance(std::begin(ObjFileList), found);
+		const size_t j = std::distance(std::begin(ObjFileList), found);
 
 		if (pObjCels[j]) {
 			object._oAnimData.emplace(*pObjCels[j]);
@@ -1190,13 +1188,13 @@ void AddDoor(Object &door)
 
 void AddSarcophagus(Object &sarcophagus)
 {
-	dObject[sarcophagus.position.x][sarcophagus.position.y - 1] = -(sarcophagus.GetId() + 1);
+	dObject[sarcophagus.position.x][sarcophagus.position.y - 1] = -(static_cast<int8_t>(sarcophagus.GetId()) + 1);
 	sarcophagus._oVar1 = GenerateRnd(10);
 	sarcophagus._oRndSeed = AdvanceRndSeed();
 	if (sarcophagus._oVar1 >= 8) {
 		Monster *monster = PreSpawnSkeleton();
 		if (monster != nullptr) {
-			sarcophagus._oVar2 = monster->getId();
+			sarcophagus._oVar2 = static_cast<int>(monster->getId());
 		} else {
 			sarcophagus._oVar2 = -1;
 		}
@@ -1280,7 +1278,7 @@ void AddBarrel(Object &barrel)
 	if (barrel._oVar2 >= 8) {
 		Monster *skeleton = PreSpawnSkeleton();
 		if (skeleton != nullptr) {
-			barrel._oVar4 = skeleton->getId();
+			barrel._oVar4 = static_cast<int>(skeleton->getId());
 		} else {
 			barrel._oVar4 = -1;
 		}
@@ -1327,9 +1325,10 @@ void AddLargeFountain(Object &fountain)
 {
 	int ox = fountain.position.x;
 	int oy = fountain.position.y;
-	dObject[ox][oy - 1] = -(fountain.GetId() + 1);
-	dObject[ox - 1][oy] = -(fountain.GetId() + 1);
-	dObject[ox - 1][oy - 1] = -(fountain.GetId() + 1);
+	uint8_t id = -(static_cast<int8_t>(fountain.GetId()) + 1);
+	dObject[ox][oy - 1] = id;
+	dObject[ox - 1][oy] = id;
+	dObject[ox - 1][oy - 1] = id;
 	fountain._oRndSeed = AdvanceRndSeed();
 }
 
@@ -1510,7 +1509,7 @@ void UpdateCircle(Object &circle)
 			Quests[Q_BETRAYER]._qvar1 = 4;
 			NetSendCmdQuest(true, Quests[Q_BETRAYER]);
 		}
-		AddMissile(playerOnCircle->position.tile, { 35, 46 }, Direction::South, MissileID::Phasing, TARGET_BOTH, playerOnCircle->getId(), 0, 0);
+		AddMissile(playerOnCircle->position.tile, { 35, 46 }, Direction::South, MissileID::Phasing, TARGET_BOTH, *playerOnCircle, 0, 0);
 		if (playerOnCircle == MyPlayer) {
 			LastMouseButtonAction = MouseActionType::None;
 			sgbMouseDown = CLICK_NONE;
@@ -1615,9 +1614,10 @@ void UpdateFlameTrap(Object &trap)
 		constexpr MissileID TrapMissile = MissileID::FireWallControl;
 		if (dMonster[x][y] > 0)
 			MonsterTrapHit(dMonster[x][y] - 1, mindam / 2, maxdam / 2, 0, TrapMissile, GetMissileData(TrapMissile).damageType(), false);
-		if (dPlayer[x][y] > 0) {
+		Player *player = PlayerAtPosition({ x, y }, true);
+		if (player != nullptr) {
 			bool unused;
-			PlayerMHit(dPlayer[x][y] - 1, nullptr, 0, mindam, maxdam, TrapMissile, GetMissileData(TrapMissile).damageType(), false, DeathReason::MonsterOrTrap, &unused);
+			PlayerMHit(*player, nullptr, 0, mindam, maxdam, TrapMissile, GetMissileData(TrapMissile).damageType(), false, DeathReason::MonsterOrTrap, &unused);
 		}
 
 		if (trap._oAnimFrame == trap._oAnimLen)
@@ -1751,16 +1751,16 @@ void OperateDoor(Object &door, bool sendflag)
 	bool openDoor = door._oVar4 == DOOR_CLOSED;
 
 	if (!openDoor && !IsDoorClear(door)) {
-		PlaySfxLoc(isCrypt ? IS_CRCLOS : IS_DOORCLOS, door.position);
+		PlaySfxLoc(isCrypt ? SfxID::CryptDoorClose : SfxID::DoorClose, door.position);
 		door._oVar4 = DOOR_BLOCKED;
 		return;
 	}
 
 	if (openDoor) {
-		PlaySfxLoc(isCrypt ? IS_CROPEN : IS_DOOROPEN, door.position);
+		PlaySfxLoc(isCrypt ? SfxID::CryptDoorOpen : SfxID::DoorOpen, door.position);
 		OpenDoor(door);
 	} else {
-		PlaySfxLoc(isCrypt ? IS_CRCLOS : IS_DOORCLOS, door.position);
+		PlaySfxLoc(isCrypt ? SfxID::CryptDoorClose : SfxID::DoorClose, door.position);
 		CloseDoor(door);
 	}
 
@@ -1813,12 +1813,12 @@ void OperateLever(Object &object, bool sendmsg)
 		return;
 	}
 
-	PlaySfxLoc(IS_LEVER, object.position);
+	PlaySfxLoc(SfxID::OperateLever, object.position);
 
 	UpdateLeverState(object);
 
 	if (currlevel == 24) {
-		PlaySfxLoc(IS_CROPEN, { UberRow, UberCol });
+		PlaySfxLoc(SfxID::CryptDoorOpen, { UberRow, UberCol });
 		Quests[Q_NAKRUL]._qactive = QUEST_DONE;
 		NetSendCmdQuest(true, Quests[Q_NAKRUL]);
 	}
@@ -1853,7 +1853,7 @@ void OperateBook(Player &player, Object &book, bool sendmsg)
 
 		circle._oVar6 = 4;
 		ObjectAtPosition({ 35, 36 })._oVar5++;
-		AddMissile(player.position.tile, target, Direction::South, MissileID::Phasing, TARGET_BOTH, player.getId(), 0, 0);
+		AddMissile(player.position.tile, target, Direction::South, MissileID::Phasing, TARGET_BOTH, player, 0, 0);
 	}
 
 	book._oSelFlag = 0;
@@ -1886,7 +1886,7 @@ void OperateBook(Player &player, Object &book, bool sendmsg)
 			Quests[Q_SCHAMB]._qactive = QUEST_DONE;
 			NetSendCmdQuest(true, Quests[Q_SCHAMB]);
 		}
-		PlaySfxLoc(IS_QUESTDN, book.position);
+		PlaySfxLoc(SfxID::QuestDone, book.position);
 		InitDiabloMsg(EMSG_BONECHAMB);
 		AddMissile(
 		    player.position.tile,
@@ -1894,7 +1894,7 @@ void OperateBook(Player &player, Object &book, bool sendmsg)
 		    player._pdir,
 		    MissileID::Guardian,
 		    TARGET_MONSTERS,
-		    player.getId(),
+		    player,
 		    0,
 		    0);
 	}
@@ -2007,7 +2007,7 @@ void OperateChest(const Player &player, Object &chest, bool sendLootMsg)
 		return;
 	}
 
-	PlaySfxLoc(IS_CHEST, chest.position);
+	PlaySfxLoc(SfxID::ChestOpen, chest.position);
 	chest._oSelFlag = 0;
 	chest._oAnimFrame += 2;
 	SetRndSeed(chest._oRndSeed);
@@ -2049,6 +2049,7 @@ void OperateChest(const Player &player, Object &chest, bool sendLootMsg)
 			mtype = MissileID::Arrow;
 		}
 		AddMissile(chest.position, player.position.tile, mdir, mtype, TARGET_PLAYERS, -1, 0, 0);
+		PlaySfxLoc(SfxID::TriggerTrap, chest.position);
 		chest._oTrapFlag = false;
 	}
 	if (&player == MyPlayer)
@@ -2075,7 +2076,7 @@ void OperateMushroomPatch(const Player &player, Object &mushroomPatch)
 	mushroomPatch._oSelFlag = 0;
 	mushroomPatch._oAnimFrame++;
 
-	PlaySfxLoc(IS_CHEST, mushroomPatch.position);
+	PlaySfxLoc(SfxID::ChestOpen, mushroomPatch.position);
 	Point pos = GetSuperItemLoc(mushroomPatch.position);
 
 	if (&player == MyPlayer) {
@@ -2106,7 +2107,7 @@ void OperateInnSignChest(const Player &player, Object &questContainer, bool send
 	questContainer._oSelFlag = 0;
 	questContainer._oAnimFrame += 2;
 
-	PlaySfxLoc(IS_CHEST, questContainer.position);
+	PlaySfxLoc(SfxID::ChestOpen, questContainer.position);
 
 	if (sendmsg) {
 		Point pos = GetSuperItemLoc(questContainer.position);
@@ -2144,7 +2145,7 @@ void OperateSlainHero(const Player &player, Object &corpse, bool sendmsg)
 
 void OperateTrapLever(Object &flameLever)
 {
-	PlaySfxLoc(IS_LEVER, flameLever.position);
+	PlaySfxLoc(SfxID::OperateLever, flameLever.position);
 
 	if (flameLever._oAnimFrame == 1) {
 		flameLever._oAnimFrame = 2;
@@ -2176,7 +2177,7 @@ void OperateSarcophagus(Object &sarcophagus, bool sendMsg, bool sendLootMsg)
 		return;
 	}
 
-	PlaySfxLoc(IS_SARC, sarcophagus.position);
+	PlaySfxLoc(SfxID::Sarcophagus, sarcophagus.position);
 	sarcophagus._oSelFlag = 0;
 	sarcophagus._oAnimFlag = true;
 	sarcophagus._oAnimDelay = 3;
@@ -2211,19 +2212,19 @@ void OperatePedestal(Player &player, Object &pedestal, bool sendmsg)
 	pedestal._oAnimFrame++;
 	pedestal._oVar6++;
 	if (pedestal._oVar6 == 1) {
-		PlaySfxLoc(LS_PUDDLE, pedestal.position);
+		PlaySfxLoc(SfxID::SpellPuddle, pedestal.position);
 		ObjChangeMap(SetPiece.position.x, SetPiece.position.y + 3, SetPiece.position.x + 2, SetPiece.position.y + 7);
 		if (sendmsg)
 			SpawnQuestItem(IDI_BLDSTONE, SetPiece.position.megaToWorld() + Displacement { 3, 10 }, 0, 1, true);
 	}
 	if (pedestal._oVar6 == 2) {
-		PlaySfxLoc(LS_PUDDLE, pedestal.position);
+		PlaySfxLoc(SfxID::SpellPuddle, pedestal.position);
 		ObjChangeMap(SetPiece.position.x + 6, SetPiece.position.y + 3, SetPiece.position.x + SetPiece.size.width, SetPiece.position.y + 7);
 		if (sendmsg)
 			SpawnQuestItem(IDI_BLDSTONE, SetPiece.position.megaToWorld() + Displacement { 15, 10 }, 0, 1, true);
 	}
 	if (pedestal._oVar6 == 3) {
-		PlaySfxLoc(LS_BLODSTAR, pedestal.position);
+		PlaySfxLoc(SfxID::SpellBloodStar, pedestal.position);
 		ObjChangeMap(pedestal._oVar1, pedestal._oVar2, pedestal._oVar3, pedestal._oVar4);
 		LoadMapObjects("levels\\l2data\\blood2.dun", SetPiece.position.megaToWorld());
 		if (sendmsg)
@@ -2382,7 +2383,7 @@ void OperateShrineMagical(const Player &player)
 	    player._pdir,
 	    MissileID::ManaShield,
 	    TARGET_MONSTERS,
-	    player.getId(),
+	    player,
 	    0,
 	    2 * leveltype);
 
@@ -2539,7 +2540,7 @@ void OperateShrineCryptic(Player &player)
 	    player._pdir,
 	    MissileID::Nova,
 	    TARGET_MONSTERS,
-	    player.getId(),
+	    player,
 	    0,
 	    2 * leveltype);
 
@@ -2631,7 +2632,7 @@ void OperateShrineDivine(Player &player, Point spawnPosition)
 
 void OperateShrineHoly(const Player &player)
 {
-	AddMissile(player.position.tile, { 0, 0 }, Direction::South, MissileID::Phasing, TARGET_MONSTERS, player.getId(), 0, 2 * leveltype);
+	AddMissile(player.position.tile, { 0, 0 }, Direction::South, MissileID::Phasing, TARGET_MONSTERS, player, 0, 2 * leveltype);
 
 	if (&player != MyPlayer)
 		return;
@@ -2901,7 +2902,7 @@ void OperateShrineTown(const Player &player, Point spawnPosition)
 	    player._pdir,
 	    MissileID::TownPortal,
 	    TARGET_MONSTERS,
-	    player.getId(),
+	    player,
 	    0,
 	    0);
 
@@ -2972,15 +2973,12 @@ void OperateShrineMurphys(Player &player)
 	InitDiabloMsg(EMSG_SHRINE_MURPHYS);
 }
 
-void OperateShrine(Player &player, Object &shrine, _sfx_id sType)
+void OperateShrine(Player &player, Object &shrine, SfxID sType)
 {
 	if (shrine._oSelFlag == 0)
 		return;
 
-	if (dropGoldFlag) {
-		CloseGoldDrop();
-		dropGoldValue = 0;
-	}
+	CloseGoldDrop();
 
 	SetRndSeed(shrine._oRndSeed);
 	shrine._oSelFlag = 0;
@@ -3102,7 +3100,7 @@ void OperateBookStand(Object &bookStand, bool sendmsg, bool sendLootMsg)
 		return;
 	}
 
-	PlaySfxLoc(IS_ISCROL, bookStand.position);
+	PlaySfxLoc(SfxID::ItemScroll, bookStand.position);
 	bookStand._oSelFlag = 0;
 	bookStand._oAnimFrame += 2;
 	SetRndSeed(bookStand._oRndSeed);
@@ -3120,7 +3118,7 @@ void OperateBookcase(Object &bookcase, bool sendmsg, bool sendLootMsg)
 		return;
 	}
 
-	PlaySfxLoc(IS_ISCROL, bookcase.position);
+	PlaySfxLoc(SfxID::ItemScroll, bookcase.position);
 	bookcase._oSelFlag = 0;
 	bookcase._oAnimFrame -= 2;
 	SetRndSeed(bookcase._oRndSeed);
@@ -3191,7 +3189,7 @@ int FindValidShrine()
 	}
 }
 
-void OperateGoatShrine(Player &player, Object &object, _sfx_id sType)
+void OperateGoatShrine(Player &player, Object &object, SfxID sType)
 {
 	SetRndSeed(object._oRndSeed);
 	object._oVar1 = FindValidShrine();
@@ -3200,7 +3198,7 @@ void OperateGoatShrine(Player &player, Object &object, _sfx_id sType)
 	RedrawEverything();
 }
 
-void OperateCauldron(Player &player, Object &object, _sfx_id sType)
+void OperateCauldron(Player &player, Object &object, SfxID sType)
 {
 	SetRndSeed(object._oRndSeed);
 	object._oVar1 = FindValidShrine();
@@ -3219,7 +3217,7 @@ bool OperateFountains(Player &player, Object &fountain)
 			return false;
 
 		if (player._pHitPoints < player._pMaxHP) {
-			PlaySfxLoc(LS_FOUNTAIN, fountain.position);
+			PlaySfxLoc(SfxID::OperateFountain, fountain.position);
 			player._pHitPoints += 64;
 			player._pHPBase += 64;
 			if (player._pHitPoints > player._pMaxHP) {
@@ -3228,14 +3226,14 @@ bool OperateFountains(Player &player, Object &fountain)
 			}
 			applied = true;
 		} else
-			PlaySfxLoc(LS_FOUNTAIN, fountain.position);
+			PlaySfxLoc(SfxID::OperateFountain, fountain.position);
 		break;
 	case OBJ_PURIFYINGFTN:
 		if (&player != MyPlayer)
 			return false;
 
 		if (player._pMana < player._pMaxMana) {
-			PlaySfxLoc(LS_FOUNTAIN, fountain.position);
+			PlaySfxLoc(SfxID::OperateFountain, fountain.position);
 
 			player._pMana += 64;
 			player._pManaBase += 64;
@@ -3246,12 +3244,12 @@ bool OperateFountains(Player &player, Object &fountain)
 
 			applied = true;
 		} else
-			PlaySfxLoc(LS_FOUNTAIN, fountain.position);
+			PlaySfxLoc(SfxID::OperateFountain, fountain.position);
 		break;
 	case OBJ_MURKYFTN:
 		if (fountain._oSelFlag == 0)
 			break;
-		PlaySfxLoc(LS_FOUNTAIN, fountain.position);
+		PlaySfxLoc(SfxID::OperateFountain, fountain.position);
 		fountain._oSelFlag = 0;
 		AddMissile(
 		    player.position.tile,
@@ -3259,7 +3257,7 @@ bool OperateFountains(Player &player, Object &fountain)
 		    player._pdir,
 		    MissileID::Infravision,
 		    TARGET_MONSTERS,
-		    player.getId(),
+		    player,
 		    0,
 		    2 * leveltype);
 		applied = true;
@@ -3269,7 +3267,7 @@ bool OperateFountains(Player &player, Object &fountain)
 	case OBJ_TEARFTN: {
 		if (fountain._oSelFlag == 0)
 			break;
-		PlaySfxLoc(LS_FOUNTAIN, fountain.position);
+		PlaySfxLoc(SfxID::OperateFountain, fountain.position);
 		fountain._oSelFlag = 0;
 		if (&player != MyPlayer)
 			return false;
@@ -3366,7 +3364,7 @@ void OperateStoryBook(Object &storyBook)
 		return;
 	}
 	storyBook._oAnimFrame = storyBook._oVar4;
-	PlaySfxLoc(IS_ISCROL, storyBook.position);
+	PlaySfxLoc(SfxID::ItemScroll, storyBook.position);
 	auto msg = static_cast<_speech_id>(storyBook._oVar2);
 	if (storyBook._oVar8 != 0 && currlevel == 24) {
 		if (!IsUberLeverActivated && Quests[Q_NAKRUL]._qactive != QUEST_DONE && OperateNakrulBook(storyBook._oVar8)) {
@@ -3443,7 +3441,7 @@ void BreakCrux(Object &crux, bool sendmsg)
 	if (!AreAllCruxesOfTypeBroken(crux._oVar8))
 		return;
 
-	PlaySfxLoc(IS_LEVER, crux.position);
+	PlaySfxLoc(SfxID::OperateLever, crux.position);
 	ObjChangeMap(crux._oVar1, crux._oVar2, crux._oVar3, crux._oVar4);
 }
 
@@ -3466,20 +3464,21 @@ void BreakBarrel(const Player &player, Object &barrel, bool forcebreak, bool sen
 
 	if (barrel.isExplosive()) {
 		if (barrel._otype == _object_id::OBJ_URNEX)
-			PlaySfxLoc(IS_POPPOP3, barrel.position);
+			PlaySfxLoc(SfxID::UrnExpload, barrel.position);
 		else if (barrel._otype == _object_id::OBJ_PODEX)
-			PlaySfxLoc(IS_POPPOP8, barrel.position);
+			PlaySfxLoc(SfxID::PodExpload, barrel.position);
 		else
-			PlaySfxLoc(IS_BARLFIRE, barrel.position);
+			PlaySfxLoc(SfxID::BarrelExpload, barrel.position);
 		for (int yp = barrel.position.y - 1; yp <= barrel.position.y + 1; yp++) {
 			for (int xp = barrel.position.x - 1; xp <= barrel.position.x + 1; xp++) {
 				constexpr MissileID TrapMissile = MissileID::Firebolt;
 				if (dMonster[xp][yp] > 0) {
 					MonsterTrapHit(dMonster[xp][yp] - 1, 1, 4, 0, TrapMissile, GetMissileData(TrapMissile).damageType(), false);
 				}
-				if (dPlayer[xp][yp] > 0) {
+				Player *adjacentPlayer = PlayerAtPosition({ xp, yp }, true);
+				if (adjacentPlayer != nullptr) {
 					bool unused;
-					PlayerMHit(dPlayer[xp][yp] - 1, nullptr, 0, 8, 16, TrapMissile, GetMissileData(TrapMissile).damageType(), false, DeathReason::MonsterOrTrap, &unused);
+					PlayerMHit(*adjacentPlayer, nullptr, 0, 8, 16, TrapMissile, GetMissileData(TrapMissile).damageType(), false, DeathReason::MonsterOrTrap, &unused);
 				}
 				// don't really need to exclude large objects as explosive barrels are single tile objects, but using considerLargeObjects == false as this matches the old logic.
 				Object *adjacentObject = FindObjectAtPosition({ xp, yp }, false);
@@ -3490,11 +3489,11 @@ void BreakBarrel(const Player &player, Object &barrel, bool forcebreak, bool sen
 		}
 	} else {
 		if (barrel._otype == _object_id::OBJ_URN)
-			PlaySfxLoc(IS_POPPOP2, barrel.position);
+			PlaySfxLoc(SfxID::UrnBreak, barrel.position);
 		else if (barrel._otype == _object_id::OBJ_POD)
-			PlaySfxLoc(IS_POPPOP5, barrel.position);
+			PlaySfxLoc(SfxID::PodPop, barrel.position);
 		else
-			PlaySfxLoc(IS_BARREL, barrel.position);
+			PlaySfxLoc(SfxID::BarrelBreak, barrel.position);
 		SetRndSeed(barrel._oRndSeed);
 		if (barrel._oVar2 <= 1) {
 			if (barrel._oVar3 == 0)
@@ -3951,20 +3950,18 @@ void SetMapObjects(const uint16_t *dunData, int startx, int starty)
 
 	ClrAllObjects();
 
-	int width = SDL_SwapLE16(dunData[0]);
-	int height = SDL_SwapLE16(dunData[1]);
+	WorldTileSize size = GetDunSize(dunData);
 
-	int layer2Offset = 2 + width * height;
+	int layer2Offset = 2 + size.width * size.height;
 
 	// The rest of the layers are at dPiece scale
-	width *= 2;
-	height *= 2;
+	size *= static_cast<WorldTileCoord>(2);
 
-	const uint16_t *objectLayer = &dunData[layer2Offset + width * height * 2];
+	const uint16_t *objectLayer = &dunData[layer2Offset + size.width * size.height * 2];
 
-	for (int j = 0; j < height; j++) {
-		for (int i = 0; i < width; i++) {
-			auto objectId = static_cast<uint8_t>(SDL_SwapLE16(objectLayer[j * width + i]));
+	for (WorldTileCoord j = 0; j < size.height; j++) {
+		for (WorldTileCoord i = 0; i < size.width; i++) {
+			auto objectId = static_cast<uint8_t>(SDL_SwapLE16(objectLayer[j * size.width + i]));
 			if (objectId != 0) {
 				const ObjectData &objectData = AllObjects[ObjTypeConv[objectId]];
 				filesWidths[objectData.ofindex] = objectData.animWidth;
@@ -3974,9 +3971,9 @@ void SetMapObjects(const uint16_t *dunData, int startx, int starty)
 
 	LoadLevelObjects(filesWidths);
 
-	for (int j = 0; j < height; j++) {
-		for (int i = 0; i < width; i++) {
-			auto objectId = static_cast<uint8_t>(SDL_SwapLE16(objectLayer[j * width + i]));
+	for (WorldTileCoord j = 0; j < size.height; j++) {
+		for (WorldTileCoord i = 0; i < size.width; i++) {
+			auto objectId = static_cast<uint8_t>(SDL_SwapLE16(objectLayer[j * size.width + i]));
 			if (objectId != 0) {
 				AddObject(ObjTypeConv[objectId], { startx + 16 + i, starty + 16 + j });
 			}
@@ -4170,7 +4167,7 @@ void OperateTrap(Object &trap)
 
 	Direction dir = GetDirection(trap.position, target);
 	AddMissile(trap.position, target, dir, static_cast<MissileID>(trap._oVar3), TARGET_PLAYERS, -1, 0, 0);
-	PlaySfxLoc(IS_TRAP, triggerPosition);
+	PlaySfxLoc(SfxID::TriggerTrap, triggerPosition);
 }
 
 void ProcessObjects()
@@ -4403,7 +4400,7 @@ void OperateObject(Player &player, Object &object)
 		break;
 	case OBJ_SHRINEL:
 	case OBJ_SHRINER:
-		OperateShrine(player, object, IS_MAGIC);
+		OperateShrine(player, object, SfxID::OperateShrine);
 		break;
 	case OBJ_SKELBOOK:
 	case OBJ_BOOKSTAND:
@@ -4421,10 +4418,10 @@ void OperateObject(Player &player, Object &object)
 		OperateArmorStand(object, sendmsg, sendmsg);
 		break;
 	case OBJ_GOATSHRINE:
-		OperateGoatShrine(player, object, LS_GSHRINE);
+		OperateGoatShrine(player, object, SfxID::OperateGoatShrine);
 		break;
 	case OBJ_CAULDRON:
-		OperateCauldron(player, object, LS_CALDRON);
+		OperateCauldron(player, object, SfxID::OperateCaldron);
 		break;
 	case OBJ_BLOODFTN:
 	case OBJ_PURIFYINGFTN:
@@ -4607,7 +4604,7 @@ void SyncOpObject(Player &player, int cmd, Object &object)
 		break;
 	case OBJ_SHRINEL:
 	case OBJ_SHRINER:
-		OperateShrine(player, object, IS_MAGIC);
+		OperateShrine(player, object, SfxID::OperateShrine);
 		break;
 	case OBJ_SKELBOOK:
 	case OBJ_BOOKSTAND:
@@ -4625,14 +4622,14 @@ void SyncOpObject(Player &player, int cmd, Object &object)
 		OperateArmorStand(object, sendmsg, false);
 		break;
 	case OBJ_GOATSHRINE:
-		OperateGoatShrine(player, object, LS_GSHRINE);
+		OperateGoatShrine(player, object, SfxID::OperateGoatShrine);
 		break;
 	case OBJ_LAZSTAND:
 		if (!sendmsg)
 			UpdateState(object, object._oAnimFrame + 1);
 		break;
 	case OBJ_CAULDRON:
-		OperateCauldron(player, object, LS_CALDRON);
+		OperateCauldron(player, object, SfxID::OperateCaldron);
 		break;
 	case OBJ_MURKYFTN:
 	case OBJ_TEARFTN:
@@ -4718,7 +4715,7 @@ void SyncObjectAnim(Object &object)
 			return;
 		}
 
-		const int i = std::distance(std::begin(ObjFileList), found);
+		const size_t i = std::distance(std::begin(ObjFileList), found);
 
 		if (pObjCels[i]) {
 			object._oAnimData.emplace(*pObjCels[i]);

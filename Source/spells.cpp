@@ -213,9 +213,8 @@ SpellCheckResult CheckSpell(const Player &player, SpellID sn, SpellType st, bool
 	return SpellCheckResult::Success;
 }
 
-void CastSpell(int id, SpellID spl, WorldTilePosition src, WorldTilePosition dst, int spllvl)
+void CastSpell(Player &player, SpellID spl, WorldTilePosition src, WorldTilePosition dst, int spllvl)
 {
-	Player &player = Players[id];
 	Direction dir = player._pdir;
 	if (IsWallSpell(spl)) {
 		dir = player.tempDirection;
@@ -224,12 +223,12 @@ void CastSpell(int id, SpellID spl, WorldTilePosition src, WorldTilePosition dst
 	bool fizzled = false;
 	const SpellData &spellData = GetSpellData(spl);
 	for (size_t i = 0; i < sizeof(spellData.sMissiles) / sizeof(spellData.sMissiles[0]) && spellData.sMissiles[i] != MissileID::Null; i++) {
-		Missile *missile = AddMissile(src, dst, dir, spellData.sMissiles[i], TARGET_MONSTERS, id, 0, spllvl);
+		Missile *missile = AddMissile(src, dst, dir, spellData.sMissiles[i], TARGET_MONSTERS, player, 0, spllvl);
 		fizzled |= (missile == nullptr);
 	}
 	if (spl == SpellID::ChargedBolt) {
 		for (int i = (spllvl / 2) + 3; i > 0; i--) {
-			Missile *missile = AddMissile(src, dst, dir, MissileID::ChargedBolt, TARGET_MONSTERS, id, 0, spllvl);
+			Missile *missile = AddMissile(src, dst, dir, MissileID::ChargedBolt, TARGET_MONSTERS, player, 0, spllvl);
 			fizzled |= (missile == nullptr);
 		}
 	}
@@ -238,13 +237,9 @@ void CastSpell(int id, SpellID spl, WorldTilePosition src, WorldTilePosition dst
 	}
 }
 
-void DoResurrect(size_t pnum, Player &target)
+void DoResurrect(Player &player, Player &target)
 {
-	if (pnum >= Players.size()) {
-		return;
-	}
-
-	AddMissile(target.position.tile, target.position.tile, Direction::South, MissileID::ResurrectBeam, TARGET_MONSTERS, pnum, 0, 0);
+	AddMissile(target.position.tile, target.position.tile, Direction::South, MissileID::ResurrectBeam, TARGET_MONSTERS, player, 0, 0);
 
 	if (target._pHitPoints != 0)
 		return;

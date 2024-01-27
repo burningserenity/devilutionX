@@ -284,9 +284,15 @@ void CreateDetailDiffs(std::string_view prefix, std::string_view memoryMapFile, 
 		return;
 	}
 
-	size_t readBytes = SDL_RWsize(handle);
+	size_t readBytes = static_cast<size_t>(SDL_RWsize(handle));
 	std::unique_ptr<std::byte[]> memoryMapFileData { new std::byte[readBytes] };
+#if SDL_VERSION_ATLEAST(2, 0, 0)
 	SDL_RWread(handle, memoryMapFileData.get(), readBytes, 1);
+#else
+	SDL_RWread(handle, memoryMapFileData.get(), static_cast<int>(readBytes), 1);
+#endif
+	SDL_RWclose(handle);
+
 	const std::string_view buffer(reinterpret_cast<const char *>(memoryMapFileData.get()), readBytes);
 
 	std::unordered_map<std::string, CompareCounter> counter;
@@ -509,6 +515,17 @@ void pfile_write_hero(SaveWriter &saveWriter, bool writeGameData)
 	}
 }
 
+void RemoveAllInvalidItems(Player &player)
+{
+	for (int i = 0; i < NUM_INVLOC; i++)
+		RemoveInvalidItem(player.InvBody[i]);
+	for (int i = 0; i < player._pNumInv; i++)
+		RemoveInvalidItem(player.InvList[i]);
+	for (int i = 0; i < MaxBeltItems; i++)
+		RemoveInvalidItem(player.SpdList[i]);
+	RemoveEmptyInventory(player);
+}
+
 } // namespace
 
 #ifdef UNPACKED_SAVES
@@ -664,7 +681,7 @@ bool pfile_ui_set_hero_infos(bool (*uiAddHeroInfo)(_uiheroinfo *))
 
 				UnPackPlayer(pkplr, player);
 				LoadHeroItems(player);
-				RemoveEmptyInventory(player);
+				RemoveAllInvalidItems(player);
 				CalcPlrInv(player, false);
 
 				Game2UiPlayer(player, &uihero, hasSaveGame);
@@ -751,7 +768,7 @@ void pfile_read_player_from_save(uint32_t saveNum, Player &player)
 
 	UnPackPlayer(pkplr, player);
 	LoadHeroItems(player);
-	RemoveEmptyInventory(player);
+	RemoveAllInvalidItems(player);
 	CalcPlrInv(player, false);
 }
 

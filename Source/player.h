@@ -459,7 +459,7 @@ public:
 	/**
 	 * @brief Returns the network identifier for this player
 	 */
-	[[nodiscard]] size_t getId() const;
+	[[nodiscard]] uint8_t getId() const;
 
 	void RemoveSpdBarItem(int iv);
 
@@ -906,9 +906,19 @@ public:
 
 	/** @brief Returns a character's mana based on starting mana, character level, and base magic. */
 	int32_t calculateBaseMana() const;
+
+	/**
+	 * @brief Sets a tile/dPlayer to be occupied by the player
+	 * @param position tile to update
+	 * @param isMoving specifies whether the player is moving or not (true/moving results in a negative index in dPlayer)
+	 */
+	void occupyTile(Point position, bool isMoving) const;
+
+	/** @brief Checks if the player level is owned by local client. */
+	bool isLevelOwnedByLocalClient() const;
 };
 
-extern DVL_API_FOR_TEST size_t MyPlayerId;
+extern DVL_API_FOR_TEST uint8_t MyPlayerId;
 extern DVL_API_FOR_TEST Player *MyPlayer;
 extern DVL_API_FOR_TEST std::vector<Player> Players;
 /** @brief What Player items and stats should be displayed? Normally this is identical to MyPlayer but can differ when /inspect was used. */
@@ -920,7 +930,7 @@ inline bool IsInspectingPlayer()
 }
 extern bool MyPlayerIsDead;
 
-Player *PlayerAtPosition(Point position);
+Player *PlayerAtPosition(Point position, bool ignoreMovingPlayers = false);
 
 void LoadPlrGFX(Player &player, player_graphic graphic);
 void InitPlayerGFX(Player &player);

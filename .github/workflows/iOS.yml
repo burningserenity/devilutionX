@@ -36,11 +36,11 @@ jobs:
         fetch-depth: 0
 
     - name: Cache CMake build folder
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       with:
         path: build
-        key: ${{ github.workflow }}-v2-${{ github.sha }}
-        restore-keys: ${{ github.workflow }}-v2-
+        key: ${{ github.workflow }}-v3-${{ github.sha }}
+        restore-keys: ${{ github.workflow }}-v3-
 
     - name: Configure CMake
       # Use a bash shell so we can use the same syntax for environment variable
@@ -61,7 +61,7 @@ jobs:
 
     - name: Upload-Package
       if: ${{ !env.ACT }}
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: devilutionx-iOS.ipa
         path: build/devilutionx-iOS.ipa

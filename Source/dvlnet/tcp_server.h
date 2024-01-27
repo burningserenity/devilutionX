@@ -39,6 +39,7 @@ public:
 	    unsigned short port, packet_factory &pktfty);
 	std::string LocalhostSelf();
 	tl::expected<void, PacketError> CheckIoHandlerError();
+	void DisconnectNet(plr_t plr);
 	void Close();
 	virtual ~tcp_server();
 
@@ -80,7 +81,7 @@ private:
 	tl::expected<void, PacketError> HandleReceiveNewPlayer(const scc &con, packet &pkt);
 	tl::expected<void, PacketError> HandleReceivePacket(packet &pkt);
 	tl::expected<void, PacketError> SendPacket(packet &pkt);
-	void StartSend(const scc &con, packet &pkt);
+	tl::expected<void, PacketError> StartSend(const scc &con, packet &pkt);
 	void HandleSend(const scc &con, const asio::error_code &ec, size_t bytesSent);
 	void StartTimeout(const scc &con);
 	void HandleTimeout(const scc &con, const asio::error_code &ec);

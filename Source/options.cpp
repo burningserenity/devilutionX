@@ -162,7 +162,7 @@ float GetIniFloat(const char *sectionName, const char *keyName, float defaultVal
 	return (float)GetIni().GetDoubleValue(sectionName, keyName, defaultValue);
 }
 
-bool GetIniValue(std::string_view sectionName, std::string_view keyName, char *string, int stringSize, const char *defaultString = "")
+bool GetIniValue(std::string_view sectionName, std::string_view keyName, char *string, size_t stringSize, const char *defaultString = "")
 {
 	std::string sectionNameStr { sectionName };
 	std::string keyNameStr { keyName };
@@ -941,7 +941,7 @@ std::string_view OptionEntryAudioDevice::GetDeviceName(size_t index) const
 {
 #if SDL_VERSION_ATLEAST(2, 0, 0)
 	if (index != 0)
-		return SDL_GetAudioDeviceName(index - 1, false);
+		return SDL_GetAudioDeviceName(static_cast<int>(index) - 1, false);
 #endif
 	return "";
 }
@@ -1297,7 +1297,7 @@ std::vector<OptionEntryBase *> LanguageOptions::GetEntries()
 KeymapperOptions::KeymapperOptions()
     : OptionCategoryBase("Keymapping", N_("Keymapping"), N_("Keymapping Settings"))
 {
-	// Insert all supported keys: a-z, 0-9 and F1-F12.
+	// Insert all supported keys: a-z, 0-9 and F1-F24.
 	keyIDToKeyName.reserve(('Z' - 'A' + 1) + ('9' - '0' + 1) + 12);
 	for (char c = 'A'; c <= 'Z'; ++c) {
 		keyIDToKeyName.emplace(c, std::string(1, c));
@@ -1308,18 +1308,56 @@ KeymapperOptions::KeymapperOptions()
 	for (int i = 0; i < 12; ++i) {
 		keyIDToKeyName.emplace(SDLK_F1 + i, StrCat("F", i + 1));
 	}
+	for (int i = 0; i < 12; ++i) {
+		keyIDToKeyName.emplace(SDLK_F13 + i, StrCat("F", i + 13));
+	}
+
+	keyIDToKeyName.emplace(SDLK_KP_0, "KEYPADNUM 0");
+	for (int i = 0; i < 9; i++) {
+		keyIDToKeyName.emplace(SDLK_KP_1 + i, StrCat("KEYPADNUM ", i + 1));
+	}
 
 	keyIDToKeyName.emplace(SDLK_LALT, "LALT");
 	keyIDToKeyName.emplace(SDLK_RALT, "RALT");
+
 	keyIDToKeyName.emplace(SDLK_SPACE, "SPACE");
+
 	keyIDToKeyName.emplace(SDLK_RCTRL, "RCONTROL");
 	keyIDToKeyName.emplace(SDLK_LCTRL, "LCONTROL");
+
 	keyIDToKeyName.emplace(SDLK_PRINTSCREEN, "PRINT");
 	keyIDToKeyName.emplace(SDLK_PAUSE, "PAUSE");
 	keyIDToKeyName.emplace(SDLK_TAB, "TAB");
 	keyIDToKeyName.emplace(SDL_BUTTON_MIDDLE | KeymapperMouseButtonMask, "MMOUSE");
 	keyIDToKeyName.emplace(SDL_BUTTON_X1 | KeymapperMouseButtonMask, "X1MOUSE");
 	keyIDToKeyName.emplace(SDL_BUTTON_X2 | KeymapperMouseButtonMask, "X2MOUSE");
+	keyIDToKeyName.emplace(MouseScrollUpButton, "SCROLlUPMOUSE");
+	keyIDToKeyName.emplace(MouseScrollDownButton, "SCROLLDOWNMOUSE");
+	keyIDToKeyName.emplace(MouseScrollLeftButton, "SCROLlLEFTMOUSE");
+	keyIDToKeyName.emplace(MouseScrollRightButton, "SCROLLRIGHTMOUSE");
+
+	keyIDToKeyName.emplace(SDLK_BACKQUOTE, "`");
+	keyIDToKeyName.emplace(SDLK_LEFTBRACKET, "[");
+	keyIDToKeyName.emplace(SDLK_RIGHTBRACKET, "]");
+	keyIDToKeyName.emplace(SDLK_BACKSLASH, "\\");
+	keyIDToKeyName.emplace(SDLK_SEMICOLON, ";");
+	keyIDToKeyName.emplace(SDLK_QUOTE, "'");
+	keyIDToKeyName.emplace(SDLK_COMMA, ",");
+	keyIDToKeyName.emplace(SDLK_PERIOD, ".");
+	keyIDToKeyName.emplace(SDLK_SLASH, "/");
+
+	keyIDToKeyName.emplace(SDLK_BACKSPACE, "BACKSPACE");
+	keyIDToKeyName.emplace(SDLK_CAPSLOCK, "CAPSLOCK");
+	keyIDToKeyName.emplace(SDLK_SCROLLLOCK, "SCROLLLOCK");
+	keyIDToKeyName.emplace(SDLK_INSERT, "INSERT");
+	keyIDToKeyName.emplace(SDLK_DELETE, "DELETE");
+	keyIDToKeyName.emplace(SDLK_HOME, "HOME");
+	keyIDToKeyName.emplace(SDLK_END, "END");
+
+	keyIDToKeyName.emplace(SDLK_KP_DIVIDE, "KEYPAD /");
+	keyIDToKeyName.emplace(SDLK_KP_MULTIPLY, "KEYPAD *");
+	keyIDToKeyName.emplace(SDLK_KP_ENTER, "KEYPAD ENTER");
+	keyIDToKeyName.emplace(SDLK_KP_PERIOD, "KEYPAD DECIMAL");
 
 	keyNameToKeyID.reserve(keyIDToKeyName.size());
 	for (const auto &[key, value] : keyIDToKeyName) {
@@ -1389,10 +1427,11 @@ void KeymapperOptions::Action::SaveToIni(std::string_view category) const
 	if (boundKey == SDLK_UNKNOWN) {
 		// Just add an empty config entry if the action is unbound.
 		SetIniValue(category.data(), key.data(), "");
+		return;
 	}
 	auto keyNameIt = sgOptions.Keymapper.keyIDToKeyName.find(boundKey);
 	if (keyNameIt == sgOptions.Keymapper.keyIDToKeyName.end()) {
-		LogVerbose("Keymapper: no name found for key '{}'", key);
+		LogVerbose("Keymapper: no name found for key {} bound to {}", boundKey, key);
 		return;
 	}
 	SetIniValue(category.data(), key.data(), keyNameIt->second.c_str());
@@ -1633,13 +1672,13 @@ void PadmapperOptions::Action::SaveToIni(std::string_view category) const
 	}
 	std::string inputName = sgOptions.Padmapper.buttonToButtonName[static_cast<size_t>(boundInput.button)];
 	if (inputName.empty()) {
-		LogVerbose("Padmapper: no name found for key '{}'", key);
+		LogVerbose("Padmapper: no name found for button {} bound to {}", static_cast<size_t>(boundInput.button), key);
 		return;
 	}
 	if (boundInput.modifier != ControllerButton_NONE) {
 		const std::string &modifierName = sgOptions.Padmapper.buttonToButtonName[static_cast<size_t>(boundInput.modifier)];
 		if (modifierName.empty()) {
-			LogVerbose("Padmapper: no name found for key '{}'", key);
+			LogVerbose("Padmapper: no name found for modifier button {} bound to {}", static_cast<size_t>(boundInput.button), key);
 			return;
 		}
 		inputName = StrCat(modifierName, "+", inputName);

@@ -6,6 +6,7 @@
 
 #include <fmt/format.h>
 
+#include "DiabloUI/text_input.hpp"
 #include "control.h"
 #include "controls/plrctrls.h"
 #include "cursor.h"
@@ -17,6 +18,7 @@
 #include "engine/render/text_render.hpp"
 #include "engine/size.hpp"
 #include "hwcursor.hpp"
+#include "inv.h"
 #include "minitext.h"
 #include "stores.h"
 #include "utils/format_int.hpp"
@@ -29,14 +31,15 @@ namespace devilution {
 bool IsStashOpen;
 StashStruct Stash;
 bool IsWithdrawGoldOpen;
-int WithdrawGoldValue;
 
 namespace {
 
 constexpr unsigned CountStashPages = 100;
 constexpr unsigned LastStashPage = CountStashPages - 1;
 
-int InitialWithdrawGoldValue;
+char GoldWithdrawText[21];
+TextInputCursorState GoldWithdrawCursor;
+std::optional<NumberInputState> GoldWithdrawInputState;
 
 constexpr Size ButtonSize { 27, 16 };
 /** Contains mappings for the buttons in the stash (2 navigation buttons, withdraw gold buttons, 2 navigation buttons) */
@@ -121,7 +124,7 @@ void CheckStashPaste(Point cursorPosition)
 			return;
 		Stash.gold += player.HoldItem._ivalue;
 		player.HoldItem.clear();
-		PlaySFX(IS_GOLD);
+		PlaySFX(SfxID::ItemGold);
 		Stash.dirty = true;
 		NewCursor(CURSOR_HAND);
 		return;
@@ -181,10 +184,7 @@ void CheckStashCut(Point cursorPosition, bool automaticMove)
 {
 	Player &player = *MyPlayer;
 
-	if (IsWithdrawGoldOpen) {
-		IsWithdrawGoldOpen = false;
-		WithdrawGoldValue = 0;
-	}
+	CloseGoldWithdraw();
 
 	Point slot = InvalidStashPoint;
 
@@ -233,7 +233,7 @@ void CheckStashCut(Point cursorPosition, bool automaticMove)
 		if (automaticallyEquipped) {
 			PlaySFX(ItemInvSnds[ItemCAnimTbl[holdItem._iCurs]]);
 		} else if (!automaticMove || automaticallyMoved) {
-			PlaySFX(IS_IGRAB);
+			PlaySFX(SfxID::GrabItem);
 		}
 
 		if (automaticMove) {
@@ -276,8 +276,6 @@ void FreeStashGFX()
 
 void InitStash()
 {
-	InitialWithdrawGoldValue = 0;
-
 	if (!HeadlessMode) {
 		StashPanelArt = LoadClx("data\\stash.clx");
 		StashNavButtonArt = LoadClx("data\\stashnavbtns.clx");
@@ -400,8 +398,10 @@ void DrawStash(const Surface &out)
 	Point position = GetPanelPosition(UiPanels::Stash);
 	UiFlags style = UiFlags::VerticalCenter | UiFlags::ColorWhite;
 
-	DrawString(out, StrCat(Stash.GetPage() + 1), { position + Displacement { 132, 0 }, { 57, 11 } }, UiFlags::AlignCenter | style);
-	DrawString(out, FormatInteger(Stash.gold), { position + Displacement { 122, 19 }, { 107, 13 } }, UiFlags::AlignRight | style);
+	DrawString(out, StrCat(Stash.GetPage() + 1), { position + Displacement { 132, 0 }, { 57, 11 } },
+	    { .flags = UiFlags::AlignCenter | style });
+	DrawString(out, FormatInteger(Stash.gold), { position + Displacement { 122, 19 }, { 107, 13 } },
+	    { .flags = UiFlags::AlignRight | style });
 }
 
 void CheckStashItem(Point mousePosition, bool isShiftHeld, bool isCtrlHeld)
@@ -473,7 +473,7 @@ bool UseStashItem(uint16_t c)
 		return true;
 	}
 	if (item->IDidx == IDI_FUNGALTM) {
-		PlaySFX(IS_IBOOK);
+		PlaySFX(SfxID::ItemBook);
 		MyPlayer->Say(HeroSpeech::ThatDidntDoAnything, SpeechDelay);
 		return true;
 	}
@@ -486,10 +486,7 @@ bool UseStashItem(uint16_t c)
 		return true;
 	}
 
-	if (IsWithdrawGoldOpen) {
-		IsWithdrawGoldOpen = false;
-		WithdrawGoldValue = 0;
-	}
+	CloseGoldWithdraw();
 
 	if (item->isScroll()) {
 		return true;
@@ -500,11 +497,11 @@ bool UseStashItem(uint16_t c)
 	}
 
 	if (item->_iMiscId == IMISC_BOOK)
-		PlaySFX(IS_RBOOK);
+		PlaySFX(SfxID::ReadBook);
 	else
 		PlaySFX(ItemInvSnds[ItemCAnimTbl[item->_iCurs]]);
 
-	UseItem(MyPlayerId, item->_iMiscId, item->_iSpell, -1);
+	UseItem(*MyPlayer, item->_iMiscId, item->_iSpell, -1);
 
 	if (Stash.stashList[c]._iMiscId == IMISC_MAPOFDOOM)
 		return true;
@@ -589,8 +586,6 @@ void StartGoldWithdraw()
 {
 	CloseGoldDrop();
 
-	InitialWithdrawGoldValue = std::min(RoomForGold(), Stash.gold);
-
 	if (talkflag)
 		control_reset_talk();
 
@@ -599,7 +594,16 @@ void StartGoldWithdraw()
 	SDL_SetTextInputRect(&rect);
 
 	IsWithdrawGoldOpen = true;
-	WithdrawGoldValue = 0;
+	GoldWithdrawText[0] = '\0';
+	GoldWithdrawInputState.emplace(NumberInputState::Options {
+	    .textOptions {
+	        .value = GoldWithdrawText,
+	        .cursor = &GoldWithdrawCursor,
+	        .maxLength = sizeof(GoldWithdrawText) - 1,
+	    },
+	    .min = 0,
+	    .max = std::min(RoomForGold(), Stash.gold),
+	});
 	SDL_StartTextInput();
 }
 
@@ -612,24 +616,31 @@ void WithdrawGoldKeyPress(SDL_Keycode vkey)
 		return;
 	}
 
-	if ((vkey == SDLK_RETURN) || (vkey == SDLK_KP_ENTER)) {
-		if (WithdrawGoldValue > 0) {
-			WithdrawGold(myPlayer, WithdrawGoldValue);
-			PlaySFX(IS_GOLD);
+	switch (vkey) {
+	case SDLK_RETURN:
+	case SDLK_KP_ENTER:
+		if (const int value = GoldWithdrawInputState->value(); value != 0) {
+			WithdrawGold(myPlayer, value);
+			PlaySFX(SfxID::ItemGold);
 		}
 		CloseGoldWithdraw();
-	} else if (vkey == SDLK_ESCAPE) {
+		break;
+	case SDLK_ESCAPE:
 		CloseGoldWithdraw();
-	} else if (vkey == SDLK_BACKSPACE) {
-		WithdrawGoldValue /= 10;
+		break;
+	default:
+		break;
 	}
 }
 
-void DrawGoldWithdraw(const Surface &out, int amount)
+void DrawGoldWithdraw(const Surface &out)
 {
 	if (!IsWithdrawGoldOpen) {
 		return;
 	}
+
+	const std::string_view amountText = GoldWithdrawText;
+	const TextInputCursorState &cursor = GoldWithdrawCursor;
 
 	const int dialogX = 30;
 
@@ -641,38 +652,31 @@ void DrawGoldWithdraw(const Surface &out, int amount)
 	// The split gold dialog is roughly 4 lines high, but we need at least one line for the player to input an amount.
 	// Using a clipping region 50 units high (approx 3 lines with a lineheight of 17) to ensure there is enough room left
 	//  for the text entered by the player.
-	DrawString(out, wrapped, { GetPanelPosition(UiPanels::Stash, { dialogX + 31, 75 }), { 200, 50 } }, UiFlags::ColorWhitegold | UiFlags::AlignCenter, 1, 17);
+	DrawString(out, wrapped, { GetPanelPosition(UiPanels::Stash, { dialogX + 31, 75 }), { 200, 50 } },
+	    { .flags = UiFlags::ColorWhitegold | UiFlags::AlignCenter, .lineHeight = 17 });
 
-	std::string value = "";
-	if (amount > 0) {
-		value = StrCat(amount);
-	}
 	// Even a ten digit amount of gold only takes up about half a line. There's no need to wrap or clip text here so we
 	// use the Point form of DrawString.
-	DrawString(out, value, GetPanelPosition(UiPanels::Stash, { dialogX + 37, 128 }), UiFlags::ColorWhite | UiFlags::PentaCursor);
+	DrawString(out, amountText, GetPanelPosition(UiPanels::Stash, { dialogX + 37, 128 }),
+	    {
+	        .flags = UiFlags::ColorWhite | UiFlags::PentaCursor,
+	        .cursorPosition = static_cast<int>(cursor.position),
+	        .highlightRange = { static_cast<int>(cursor.selection.begin), static_cast<int>(cursor.selection.end) },
+	    });
 }
 
 void CloseGoldWithdraw()
 {
 	if (!IsWithdrawGoldOpen)
 		return;
-	IsWithdrawGoldOpen = false;
-	WithdrawGoldValue = 0;
 	SDL_StopTextInput();
+	IsWithdrawGoldOpen = false;
+	GoldWithdrawInputState = std::nullopt;
 }
 
-void GoldWithdrawNewText(std::string_view text)
+bool HandleGoldWithdrawTextInputEvent(const SDL_Event &event)
 {
-	for (char vkey : text) {
-		int digit = vkey - '0';
-		if (digit >= 0 && digit <= 9) {
-			int newGoldValue = WithdrawGoldValue * 10;
-			newGoldValue += digit;
-			if (newGoldValue <= InitialWithdrawGoldValue) {
-				WithdrawGoldValue = newGoldValue;
-			}
-		}
-	}
+	return HandleNumberInputEvent(event, *GoldWithdrawInputState);
 }
 
 bool AutoPlaceItemInStash(Player &player, const Item &item, bool persistItem)

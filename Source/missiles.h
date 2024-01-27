@@ -205,7 +205,7 @@ DamageRange GetDamageAmt(SpellID spell, int spellLevel);
  */
 Direction16 GetDirection16(Point p1, Point p2);
 bool MonsterTrapHit(int monsterId, int mindam, int maxdam, int dist, MissileID t, DamageType damageType, bool shift);
-bool PlayerMHit(int pnum, Monster *monster, int dist, int mind, int maxd, MissileID mtype, DamageType damageType, bool shift, DeathReason deathReason, bool *blocked);
+bool PlayerMHit(Player &player, Monster *monster, int dist, int mind, int maxd, MissileID mtype, DamageType damageType, bool shift, DeathReason deathReason, bool *blocked);
 
 /**
  * @brief Could the missile collide with solid objects? (like walls or closed doors)
@@ -394,7 +394,19 @@ void AddRedPortal(Missile &missile, AddMissileParameter &parameter);
 void AddDiabloApocalypse(Missile &missile, AddMissileParameter &parameter);
 Missile *AddMissile(WorldTilePosition src, WorldTilePosition dst, Direction midir, MissileID mitype,
     mienemy_type micaster, int id, int midam, int spllvl,
-    Missile *parent = nullptr, std::optional<_sfx_id> lSFX = std::nullopt);
+    Missile *parent = nullptr, std::optional<SfxID> lSFX = std::nullopt);
+inline Missile *AddMissile(WorldTilePosition src, WorldTilePosition dst, Direction midir, MissileID mitype,
+    mienemy_type micaster, const Player &player, int midam, int spllvl,
+    Missile *parent = nullptr, std::optional<SfxID> lSFX = std::nullopt)
+{
+	return AddMissile(src, dst, midir, mitype, micaster, player.getId(), midam, spllvl, parent, lSFX);
+}
+inline Missile *AddMissile(WorldTilePosition src, WorldTilePosition dst, Direction midir, MissileID mitype,
+    mienemy_type micaster, const Monster &monster, int midam, int spllvl,
+    Missile *parent = nullptr, std::optional<SfxID> lSFX = std::nullopt)
+{
+	return AddMissile(src, dst, midir, mitype, micaster, static_cast<int>(monster.getId()), midam, spllvl, parent, lSFX);
+}
 void ProcessElementalArrow(Missile &missile);
 void ProcessArrow(Missile &missile);
 void ProcessGenericProjectile(Missile &missile);

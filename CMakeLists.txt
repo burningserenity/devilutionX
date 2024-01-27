@@ -130,7 +130,7 @@ set_property(CACHE DEVILUTIONX_DEFAULT_RESAMPLER PROPERTY STRINGS ${_resamplers}
 option(DISABLE_LTO "Disable link-time optimization (by default enabled in release mode)" OFF)
 option(PIE "Generate position-independent code" OFF)
 cmake_dependent_option(DEVILUTIONX_DISABLE_RTTI "Disable RTTI" ON "NONET" OFF)
-cmake_dependent_option(DEVILUTIONX_DISABLE_EXCEPTIONS "Disable exceptions" ON "NONET" OFF)
+cmake_dependent_option(DEVILUTIONX_DISABLE_EXCEPTIONS "Disable exceptions" ON "DISABLE_ZERO_TIER" OFF)
 RELEASE_OPTION(DEVILUTIONX_STATIC_CXX_STDLIB "Link C++ standard library statically (if available)")
 option(DEVILUTIONX_PROFILE_GENERATE "Build a binary that generates the profile for PGO" OFF)
 option(DEVILUTIONX_PROFILE_USE "Build with PGO using the given profile file" OFF)
@@ -269,6 +269,11 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
   add_link_options("$<$<BOOL:${DEVILUTIONX_PROFILE_USE}>:-fprofile-use>")
   add_compile_options("$<$<BOOL:${DEVILUTIONX_PROFILE_DIR}>:-fprofile-dir=${DEVILUTIONX_PROFILE_DIR};-fprofile-prefix-path=${CMAKE_CURRENT_BINARY_DIR}>")
   add_link_options("$<$<BOOL:${DEVILUTIONX_PROFILE_DIR}>:-fprofile-dir=${DEVILUTIONX_PROFILE_DIR};-fprofile-prefix-path=${CMAKE_CURRENT_BINARY_DIR}>")
+endif()
+
+if(CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
+  # u8path() function is deprecated but there is no sensible alternative and it might even get un-deprecated.
+  add_definitions(-D_SILENCE_CXX20_U8PATH_DEPRECATION_WARNING)
 endif()
 
 # Not a genexp because CMake doesn't support it
@@ -442,7 +447,7 @@ if(VITA)
       VERSION ${VITA_VERSION}
       NAME ${VITA_APP_NAME}
       FILE Packaging/vita/sce_sys sce_sys
-      FILE Packaging/resources/assets assets
+      FILE assets assets
       ${VITA_TRANSLATIONS_LIST}
     )
   endif()

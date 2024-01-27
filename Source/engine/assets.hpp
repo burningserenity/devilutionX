@@ -7,6 +7,7 @@
 #include <string_view>
 
 #include <SDL.h>
+#include <expected.hpp>
 
 #include "appfat.h"
 #include "diablo.h"
@@ -148,7 +149,7 @@ struct AssetRef {
 			int32_t error;
 			return archive->GetUnpackedFileSize(fileNumber, error);
 		}
-		return SDL_RWsize(directHandle);
+		return static_cast<size_t>(SDL_RWsize(directHandle));
 	}
 };
 
@@ -191,7 +192,11 @@ struct AssetHandle {
 
 	bool read(void *buffer, size_t len)
 	{
+#if SDL_VERSION_ATLEAST(2, 0, 0)
 		return handle->read(handle, buffer, len, 1) == 1;
+#else
+		return handle->read(handle, buffer, static_cast<int>(len), 1) == 1;
+#endif
 	}
 
 	bool seek(long pos)
@@ -245,5 +250,17 @@ AssetHandle OpenAsset(std::string_view filename, bool threadsafe = false);
 AssetHandle OpenAsset(std::string_view filename, size_t &fileSize, bool threadsafe = false);
 
 SDL_RWops *OpenAssetAsSdlRwOps(std::string_view filename, bool threadsafe = false);
+
+struct AssetData {
+	std::unique_ptr<char[]> data;
+	size_t size;
+
+	explicit operator std::string_view() const
+	{
+		return std::string_view(data.get(), size);
+	}
+};
+
+tl::expected<AssetData, std::string> LoadAsset(std::string_view path);
 
 } // namespace devilution

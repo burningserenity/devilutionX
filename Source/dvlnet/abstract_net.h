@@ -14,22 +14,14 @@ namespace devilution::net {
 using buffer_t = std::vector<unsigned char>;
 using provider_t = unsigned long;
 
-class dvlnet_exception : public std::exception {
-public:
-	const char *what() const throw() override
-	{
-		return "Network error";
-	}
-};
-
 class abstract_net {
 public:
 	virtual int create(std::string addrstr) = 0;
 	virtual int join(std::string addrstr) = 0;
-	virtual bool SNetReceiveMessage(uint8_t *sender, void **data, uint32_t *size) = 0;
-	virtual bool SNetSendMessage(int dest, void *data, unsigned int size) = 0;
+	virtual bool SNetReceiveMessage(uint8_t *sender, void **data, size_t *size) = 0;
+	virtual bool SNetSendMessage(uint8_t dest, void *data, size_t size) = 0;
 	virtual bool SNetReceiveTurns(char **data, size_t *size, uint32_t *status) = 0;
-	virtual bool SNetSendTurn(char *data, unsigned int size) = 0;
+	virtual bool SNetSendTurn(char *data, size_t size) = 0;
 	virtual void SNetGetProviderCaps(struct _SNETCAPS *caps) = 0;
 	virtual bool SNetRegisterEventHandler(event_type evtype, SEVTHANDLER func) = 0;
 	virtual bool SNetUnregisterEventHandler(event_type evtype) = 0;

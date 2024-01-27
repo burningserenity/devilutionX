@@ -115,7 +115,7 @@ void CreditsRenderer::Render()
 	ScaleOutputRect(&viewport);
 
 	// We use unscaled coordinates for calculation throughout.
-	Sint16 destY = uiPosition.y + VIEWPORT.y - (offsetY - linesBegin * LINE_H);
+	Sint16 destY = static_cast<Sint16>(uiPosition.y + VIEWPORT.y - (offsetY - linesBegin * LINE_H));
 	for (std::size_t i = linesBegin; i < linesEnd; ++i, destY += LINE_H) {
 		Sint16 destX = uiPosition.x + VIEWPORT.x + 31;
 
@@ -127,7 +127,8 @@ void CreditsRenderer::Render()
 		dstRect.y -= viewport.y;
 
 		const Surface &out = Surface(DiabloUiSurface(), viewport);
-		DrawString(out, lineContent.text, Point { dstRect.x, dstRect.y }, UiFlags::FontSizeDialog | UiFlags::ColorDialogWhite, -1);
+		DrawString(out, lineContent.text, Point { dstRect.x, dstRect.y },
+		    { .flags = UiFlags::FontSizeDialog | UiFlags::ColorDialogWhite, .spacing = -1 });
 	}
 }
 

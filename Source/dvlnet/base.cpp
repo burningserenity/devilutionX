@@ -52,8 +52,7 @@ tl::expected<void, PacketError> base::SendEchoRequest(plr_t player)
 	if (!pkt.has_value()) {
 		return tl::make_unexpected(pkt.error());
 	}
-	send(**pkt);
-	return {};
+	return send(**pkt);
 }
 
 tl::expected<void, PacketError> base::HandleAccept(packet &pkt)
@@ -111,9 +110,8 @@ tl::expected<void, PacketError> base::HandleDisconnect(packet &pkt)
 	tl::expected<plr_t, PacketError> newPlayer = pkt.NewPlayer();
 	if (!newPlayer.has_value())
 		return tl::make_unexpected(newPlayer.error());
-	if (*newPlayer == plr_self) {
-		ABORT(); // we were dropped by the owner?!?
-	}
+	if (*newPlayer == plr_self)
+		return tl::make_unexpected("We were dropped by the owner?");
 	if (IsConnected(*newPlayer)) {
 		tl::expected<leaveinfo_t, PacketError> leaveinfo = pkt.LeaveInfo();
 		if (!leaveinfo.has_value())
@@ -139,8 +137,8 @@ tl::expected<void, PacketError> base::HandleEchoRequest(packet &pkt)
 	    .and_then([&](cookie_t &&pktTime) {
 		    return pktfty->make_packet<PT_ECHO_REPLY>(plr_self, pkt.Source(), pktTime);
 	    })
-	    .transform([&](std::unique_ptr<packet> &&pkt) {
-		    send(*pkt);
+	    .and_then([&](std::unique_ptr<packet> &&pkt) {
+		    return send(*pkt);
 	    });
 }
 
@@ -212,7 +210,7 @@ tl::expected<void, PacketError> base::RecvLocal(packet &pkt)
 	}
 }
 
-bool base::SNetReceiveMessage(uint8_t *sender, void **data, uint32_t *size)
+bool base::SNetReceiveMessage(uint8_t *sender, void **data, size_t *size)
 {
 	poll();
 	if (message_queue.empty())
@@ -225,17 +223,16 @@ bool base::SNetReceiveMessage(uint8_t *sender, void **data, uint32_t *size)
 	return true;
 }
 
-bool base::SNetSendMessage(int playerId, void *data, unsigned int size)
+bool base::SNetSendMessage(uint8_t playerId, void *data, size_t size)
 {
-	if (playerId != SNPLAYER_ALL && playerId != SNPLAYER_OTHERS
-	    && (playerId < 0 || playerId >= MAX_PLRS))
+	if (playerId != SNPLAYER_OTHERS && playerId >= MAX_PLRS)
 		abort();
 	auto *rawMessage = reinterpret_cast<unsigned char *>(data);
 	buffer_t message(rawMessage, rawMessage + size);
-	if (playerId == plr_self || playerId == SNPLAYER_ALL)
+	if (playerId == plr_self)
 		message_queue.emplace_back(plr_self, message);
 	plr_t dest;
-	if (playerId == SNPLAYER_ALL || playerId == SNPLAYER_OTHERS)
+	if (playerId == SNPLAYER_OTHERS)
 		dest = PLR_BROADCAST;
 	else
 		dest = playerId;
@@ -246,7 +243,11 @@ bool base::SNetSendMessage(int playerId, void *data, unsigned int size)
 			LogError("make_packet: {}", pkt.error().what());
 			return false;
 		}
-		send(**pkt);
+		tl::expected<void, PacketError> result = send(**pkt);
+		if (!result.has_value()) {
+			LogError("send: {}", result.error().what());
+			return false;
+		}
 	}
 	return true;
 }
@@ -334,7 +335,7 @@ bool base::SNetReceiveTurns(char **data, size_t *size, uint32_t *status)
 	return false;
 }
 
-bool base::SNetSendTurn(char *data, unsigned int size)
+bool base::SNetSendTurn(char *data, size_t size)
 {
 	if (size != sizeof(int32_t))
 		ABORT();
@@ -362,7 +363,7 @@ tl::expected<void, PacketError> base::SendTurnIfReady(turn_t turn)
 		if (!pkt.has_value()) {
 			return tl::make_unexpected(pkt.error());
 		}
-		send(**pkt);
+		return send(**pkt);
 	}
 	return {};
 }
@@ -383,7 +384,10 @@ tl::expected<void, PacketError> base::SendFirstTurnIfReady(plr_t player)
 		if (!pkt.has_value()) {
 			return tl::make_unexpected(pkt.error());
 		}
-		send(**pkt);
+		tl::expected<void, PacketError> result = send(**pkt);
+		if (!result.has_value()) {
+			return result;
+		}
 	}
 	return {};
 }
@@ -453,26 +457,39 @@ bool base::SNetLeaveGame(int type)
 		LogError("make_packet: {}", pkt.error().what());
 		return false;
 	}
-	send(**pkt);
+	tl::expected<void, PacketError> result = send(**pkt);
+	if (!result.has_value()) {
+		LogError("send: {}", result.error().what());
+		return false;
+	}
 	plr_self = PLR_BROADCAST;
 	return true;
 }
 
 bool base::SNetDropPlayer(int playerid, uint32_t flags)
 {
+	plr_t plr = static_cast<plr_t>(playerid);
 	tl::expected<std::unique_ptr<packet>, PacketError> pkt
 	    = pktfty->make_packet<PT_DISCONNECT>(
 	        plr_self,
 	        PLR_BROADCAST,
-	        (plr_t)playerid,
-	        (leaveinfo_t)flags);
+	        plr,
+	        static_cast<leaveinfo_t>(flags));
 	if (!pkt.has_value()) {
 		LogError("make_packet: {}", pkt.error().what());
 		return false;
 	}
-	send(**pkt);
-	if (tl::expected<void, PacketError> result = RecvLocal(**pkt); !result.has_value()) {
-		LogError("SNetDropPlayer: {}", result.error().what());
+	// Disconnect at the network layer first so we
+	// don't send players their own disconnect packet
+	DisconnectNet(plr);
+	tl::expected<void, PacketError> sendResult = send(**pkt);
+	if (!sendResult.has_value()) {
+		LogError("send: {}", sendResult.error().what());
+		return false;
+	}
+	tl::expected<void, PacketError> receiveResult = RecvLocal(**pkt);
+	if (!receiveResult.has_value()) {
+		LogError("SNetDropPlayer: {}", receiveResult.error().what());
 		return false;
 	}
 	return true;
@@ -480,7 +497,7 @@ bool base::SNetDropPlayer(int playerid, uint32_t flags)
 
 plr_t base::GetOwner()
 {
-	for (size_t i = 0; i < Players.size(); ++i) {
+	for (plr_t i = 0; i < Players.size(); ++i) {
 		if (IsConnected(i)) {
 			return i;
 		}
@@ -495,7 +512,7 @@ bool base::SNetGetOwnerTurnsWaiting(uint32_t *turns)
 	plr_t owner = GetOwner();
 	PlayerState &playerState = playerStateTable_[owner];
 	std::deque<turn_t> &turnQueue = playerState.turnQueue;
-	*turns = turnQueue.size();
+	*turns = static_cast<uint32_t>(turnQueue.size());
 
 	return true;
 }
@@ -504,7 +521,7 @@ bool base::SNetGetTurnsInTransit(uint32_t *turns)
 {
 	PlayerState &playerState = playerStateTable_[plr_self];
 	std::deque<turn_t> &turnQueue = playerState.turnQueue;
-	*turns = turnQueue.size();
+	*turns = static_cast<uint32_t>(turnQueue.size());
 	return true;
 }
 

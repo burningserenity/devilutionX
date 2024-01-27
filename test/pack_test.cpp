@@ -2,6 +2,7 @@
 
 #include <gtest/gtest.h>
 
+#include "monstdat.h"
 #include "pack.h"
 #include "playerdat.hpp"
 #include "utils/paths.h"
@@ -409,6 +410,12 @@ public:
 	{
 		Players.resize(1);
 		MyPlayer = &Players[0];
+	}
+
+	static void SetUpTestSuite()
+	{
+		LoadSpellData();
+		LoadItemData();
 	}
 };
 
@@ -942,8 +949,15 @@ public:
 		};
 
 		SwapLE(testPack);
-		LoadPlayerDataFiles();
 		UnPackPlayer(testPack, *MyPlayer);
+	}
+
+	static void SetUpTestSuite()
+	{
+		LoadSpellData();
+		LoadPlayerDataFiles();
+		LoadMonsterData();
+		LoadItemData();
 	}
 };
 
@@ -1026,7 +1040,7 @@ TEST_F(NetPackTest, UnPackNetPlayer_invalid_baseVit)
 
 TEST_F(NetPackTest, UnPackNetPlayer_invalid_numInv)
 {
-	MyPlayer->_pNumInv = InventoryGridCells;
+	MyPlayer->_pNumInv = InventoryGridCells + 1;
 	ASSERT_FALSE(TestNetPackValidation());
 }
 

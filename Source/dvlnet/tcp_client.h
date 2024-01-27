@@ -31,7 +31,8 @@ public:
 	int join(std::string addrstr) override;
 
 	tl::expected<void, PacketError> poll() override;
-	void send(packet &pkt) override;
+	tl::expected<void, PacketError> send(packet &pkt) override;
+	void DisconnectNet(plr_t plr) override;
 
 	bool SNetLeaveGame(int type) override;
 

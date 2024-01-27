@@ -1,22 +1,23 @@
 /**
- * @file error.cpp
+ * @file diablo_msg.cpp
  *
  * Implementation of in-game message functions.
  */
 
+#include <algorithm>
 #include <cstdint>
 #include <deque>
 
-#include "error.h"
+#include "diablo_msg.hpp"
 
 #include "DiabloUI/ui_flags.hpp"
+#include "engine/clx_sprite.hpp"
 #include "engine/render/clx_render.hpp"
 #include "engine/render/text_render.hpp"
 #include "panels/info_box.hpp"
-#include "stores.h"
 #include "utils/algorithm/container.hpp"
 #include "utils/language.h"
-#include "utils/timer.hpp"
+#include "utils/str_split.hpp"
 
 namespace devilution {
 
@@ -28,28 +29,29 @@ struct MessageEntry {
 };
 
 std::deque<MessageEntry> DiabloMessages;
-uint32_t msgStartTime = 0;
+uint32_t msgStartTime;
 std::vector<std::string> TextLines;
-int ErrorWindowHeight = 54;
-const int LineHeight = 12;
-const int LineWidth = 418;
+int OuterHeight;
+int LineWidth;
+int LineHeight;
 
-void InitNextLines()
+void InitDiabloMsg()
 {
 	TextLines.clear();
+	if (DiabloMessages.empty())
+		return;
 
-	const std::string paragraphs = WordWrapString(DiabloMessages.front().text, LineWidth, GameFont12, 1);
-
-	size_t previous = 0;
-	while (true) {
-		size_t next = paragraphs.find('\n', previous);
-		TextLines.emplace_back(paragraphs.substr(previous, next - previous));
-		if (next == std::string::npos)
-			break;
-		previous = next + 1;
+	LineWidth = 418;
+	const std::string_view text = DiabloMessages.front().text;
+	const std::string wrapped = WordWrapString(text, LineWidth, GameFont12);
+	for (const std::string_view line : SplitByChar(wrapped, '\n')) {
+		LineWidth = std::max(LineWidth, GetLineWidth(text, GameFont12));
+		TextLines.emplace_back(line);
 	}
 
-	ErrorWindowHeight = std::max(54, static_cast<int>((TextLines.size() * LineHeight) + 42));
+	msgStartTime = SDL_GetTicks();
+	LineHeight = GetLineHeight(text, GameFont12);
+	OuterHeight = static_cast<int>((TextLines.size()) * LineHeight) + 42;
 }
 
 } // namespace
@@ -120,17 +122,13 @@ void InitDiabloMsg(diablo_message e, uint32_t duration /*= 3500*/)
 
 void InitDiabloMsg(std::string_view msg, uint32_t duration /*= 3500*/)
 {
-	if (DiabloMessages.size() >= MAX_SEND_STR_LEN)
-		return;
-
 	if (c_find_if(DiabloMessages, [&msg](const MessageEntry &entry) { return entry.text == msg; })
 	    != DiabloMessages.end())
 		return;
 
 	DiabloMessages.push_back({ std::string(msg), duration });
 	if (DiabloMessages.size() == 1) {
-		InitNextLines();
-		msgStartTime = SDL_GetTicks();
+		InitDiabloMsg();
 	}
 }
 
@@ -143,10 +141,7 @@ void CancelCurrentDiabloMsg()
 {
 	if (!DiabloMessages.empty()) {
 		DiabloMessages.pop_front();
-		if (!DiabloMessages.empty()) {
-			InitNextLines();
-			msgStartTime = SDL_GetTicks();
-		}
+		InitDiabloMsg();
 	}
 }
 
@@ -157,46 +152,70 @@ void ClrDiabloMsg()
 
 void DrawDiabloMsg(const Surface &out)
 {
-	auto &uiRectanglePosition = GetUIRectangle().position;
-	int dialogStartY = ((gnScreenHeight - GetMainPanel().size.height) / 2) - (ErrorWindowHeight / 2) + 9;
+	const ClxSpriteList sprites = *pSTextSlidCels;
+	const ClxSprite borderCornerTopLeftSprite = sprites[0];
+	const ClxSprite borderCornerBottomLeftSprite = sprites[1];
+	const ClxSprite borderCornerBottomRightSprite = sprites[2];
+	const ClxSprite borderCornerTopRightSprite = sprites[3];
+	const ClxSprite borderTopSprite = sprites[4];
+	const ClxSprite borderLeftSprite = sprites[5];
+	const ClxSprite borderBottomSprite = sprites[6];
+	const ClxSprite borderRightSprite = sprites[7];
 
-	ClxDraw(out, { uiRectanglePosition.x + 101, dialogStartY }, (*pSTextSlidCels)[0]);
-	ClxDraw(out, { uiRectanglePosition.x + 101, dialogStartY + ErrorWindowHeight - 6 }, (*pSTextSlidCels)[1]);
-	ClxDraw(out, { uiRectanglePosition.x + 527, dialogStartY + ErrorWindowHeight - 6 }, (*pSTextSlidCels)[2]);
-	ClxDraw(out, { uiRectanglePosition.x + 527, dialogStartY }, (*pSTextSlidCels)[3]);
+	const int borderPartWidth = 12;
+	const int borderPartHeight = 12;
 
-	int sx = uiRectanglePosition.x + 109;
-	for (int i = 0; i < 35; i++) {
-		ClxDraw(out, { sx, dialogStartY }, (*pSTextSlidCels)[4]);
-		ClxDraw(out, { sx, dialogStartY + ErrorWindowHeight - 6 }, (*pSTextSlidCels)[6]);
-		sx += 12;
+	const int textPaddingX = 5;
+	const int borderThickness = 3;
+
+	const int outerHeight = std::min<int>(out.h(), OuterHeight);
+	const int outerWidth = std::min<int>(out.w(), LineWidth + 2 * borderThickness + textPaddingX);
+	const int innerWidth = outerWidth - 2 * borderThickness;
+	const int lineWidth = innerWidth - textPaddingX;
+	const int innerHeight = outerHeight - 2 * borderThickness;
+
+	const Point topLeft { (out.w() - outerWidth) / 2, (out.h() - outerHeight) / 2 };
+
+	const int innerXBegin = topLeft.x + borderThickness;
+	const int innerXEnd = innerXBegin + innerWidth;
+	const int innerYBegin = topLeft.y + borderThickness;
+	const int innerYEnd = innerYBegin + innerHeight;
+	const int borderRightX = innerXEnd - (borderPartWidth - borderThickness);
+	const int borderBottomY = innerYEnd - (borderPartHeight - borderThickness);
+
+	RenderClxSprite(out, borderCornerTopLeftSprite, topLeft);
+	RenderClxSprite(out, borderCornerBottomLeftSprite, { topLeft.x, borderBottomY });
+	RenderClxSprite(out, borderCornerBottomRightSprite, { borderRightX, borderBottomY });
+	RenderClxSprite(out, borderCornerTopRightSprite, { borderRightX, topLeft.y });
+
+	const Surface horizontalBorderOut = out.subregionX(topLeft.x, outerWidth - borderPartWidth);
+	for (int x = borderPartWidth; x < horizontalBorderOut.w(); x += borderPartWidth) {
+		RenderClxSprite(horizontalBorderOut, borderTopSprite, { x, topLeft.y });
+		RenderClxSprite(horizontalBorderOut, borderBottomSprite, { x, borderBottomY });
 	}
-	int drawnYborder = 12;
-	while ((drawnYborder + 12) < ErrorWindowHeight) {
-		ClxDraw(out, { uiRectanglePosition.x + 101, dialogStartY + drawnYborder }, (*pSTextSlidCels)[5]);
-		ClxDraw(out, { uiRectanglePosition.x + 527, dialogStartY + drawnYborder }, (*pSTextSlidCels)[7]);
-		drawnYborder += 12;
+
+	const Surface verticalBorderOut = out.subregionY(topLeft.y, outerHeight - borderPartHeight);
+	for (int y = borderPartHeight; y < verticalBorderOut.h(); y += borderPartHeight) {
+		RenderClxSprite(verticalBorderOut, borderLeftSprite, { topLeft.x, y });
+		RenderClxSprite(verticalBorderOut, borderRightSprite, { borderRightX, y });
 	}
+	DrawHalfTransparentRectTo(out, innerXBegin, innerYBegin, innerWidth, innerHeight);
 
-	DrawHalfTransparentRectTo(out, uiRectanglePosition.x + 104, dialogStartY - 8, 432, ErrorWindowHeight);
-
-	int lineNumber = 0;
-	for (auto &line : TextLines) {
-		DrawString(out, line, { { uiRectanglePosition.x + 109, dialogStartY + 12 + lineNumber * LineHeight }, { LineWidth, LineHeight } }, UiFlags::AlignCenter, 1, LineHeight);
-		lineNumber += 1;
+	const int textX = innerXBegin + textPaddingX;
+	int textY = innerYBegin + (innerHeight - LineHeight * static_cast<int>(TextLines.size())) / 2;
+	for (const std::string &line : TextLines) {
+		DrawString(out, line, { { textX, textY }, { lineWidth, LineHeight } },
+		    { .flags = UiFlags::AlignCenter, .lineHeight = LineHeight });
+		textY += LineHeight;
 	}
 
 	// Calculate the time the current message has been displayed
-	uint32_t currentTime = SDL_GetTicks();
-	uint32_t messageElapsedTime = currentTime - msgStartTime;
+	const uint32_t messageElapsedTime = SDL_GetTicks() - msgStartTime;
 
 	// Check if the current message's duration has passed
 	if (!DiabloMessages.empty() && messageElapsedTime >= DiabloMessages.front().duration) {
 		DiabloMessages.pop_front();
-		if (!DiabloMessages.empty()) {
-			InitNextLines();
-			msgStartTime = currentTime;
-		}
+		InitDiabloMsg();
 	}
 }
 

@@ -566,10 +566,7 @@ void CheckInvCut(Player &player, Point cursorPosition, bool automaticMove, bool 
 		return;
 	}
 
-	if (dropGoldFlag) {
-		CloseGoldDrop();
-		dropGoldValue = 0;
-	}
+	CloseGoldDrop();
 
 	uint32_t r = 0;
 	for (; r < NUM_XY_SLOTS; r++) {
@@ -804,7 +801,7 @@ void CheckInvCut(Player &player, Point cursorPosition, bool automaticMove, bool 
 			if (automaticallyEquipped) {
 				PlaySFX(ItemInvSnds[ItemCAnimTbl[holdItem._iCurs]]);
 			} else if (!automaticMove || automaticallyMoved) {
-				PlaySFX(IS_IGRAB);
+				PlaySFX(SfxID::GrabItem);
 			}
 
 			if (automaticMove) {
@@ -956,14 +953,13 @@ void StartGoldDrop()
 {
 	CloseGoldWithdraw();
 
-	initialDropGoldIndex = pcursinvitem;
+	const int8_t invIndex = pcursinvitem;
 
-	Player &myPlayer = *MyPlayer;
+	const Player &myPlayer = *MyPlayer;
 
-	if (pcursinvitem <= INVITEM_INV_LAST)
-		initialDropGoldValue = myPlayer.InvList[pcursinvitem - INVITEM_INV_FIRST]._ivalue;
-	else
-		initialDropGoldValue = myPlayer.SpdList[pcursinvitem - INVITEM_BELT_FIRST]._ivalue;
+	const int max = (invIndex <= INVITEM_INV_LAST)
+	    ? myPlayer.InvList[invIndex - INVITEM_INV_FIRST]._ivalue
+	    : myPlayer.SpdList[invIndex - INVITEM_BELT_FIRST]._ivalue;
 
 	if (talkflag)
 		control_reset_talk();
@@ -972,9 +968,7 @@ void StartGoldDrop()
 	SDL_Rect rect = MakeSdlRect(start.x, start.y, 180, 20);
 	SDL_SetTextInputRect(&rect);
 
-	dropGoldFlag = true;
-	dropGoldValue = 0;
-	SDL_StartTextInput();
+	OpenGoldDrop(invIndex, max);
 }
 
 int CreateGoldItemInInventorySlot(Player &player, int slotIndex, int value)
@@ -1185,7 +1179,8 @@ void DrawInvBelt(const Surface &out)
 
 		if (myPlayer.SpdList[i].isUsable()
 		    && myPlayer.SpdList[i]._itype != ItemType::Gold) {
-			DrawString(out, StrCat(i + 1), { position - Displacement { 0, 12 }, InventorySlotSizeInPixels }, UiFlags::ColorWhite | UiFlags::AlignRight);
+			DrawString(out, StrCat(i + 1), { position - Displacement { 0, 12 }, InventorySlotSizeInPixels },
+			    { .flags = UiFlags::ColorWhite | UiFlags::AlignRight });
 		}
 	}
 }
@@ -1212,7 +1207,7 @@ bool AutoPlaceItemInBelt(Player &player, const Item &item, bool persistItem, boo
 				player.CalcScrolls();
 				RedrawComponent(PanelDrawComponent::Belt);
 				if (sendNetworkMessage) {
-					size_t beltIndex = std::distance<const Item *>(&player.SpdList[0], &beltItem);
+					const auto beltIndex = static_cast<int>(std::distance<const Item *>(&player.SpdList[0], &beltItem));
 					NetSendCmdChBeltItem(false, beltIndex);
 				}
 			}
@@ -1555,10 +1550,7 @@ void CheckInvScrn(bool isShiftHeld, bool isCtrlHeld)
 void InvGetItem(Player &player, int ii)
 {
 	auto &item = Items[ii];
-	if (dropGoldFlag) {
-		CloseGoldDrop();
-		dropGoldValue = 0;
-	}
+	CloseGoldDrop();
 
 	if (dItem[item.position.x][item.position.y] == 0)
 		return;
@@ -1571,7 +1563,7 @@ void InvGetItem(Player &player, int ii)
 		if (MyPlayer == &player) {
 			// Non-gold items (or gold when you have a full inventory) go to the hand then provide audible feedback on
 			//  paste. To give the same feedback for auto-placed gold we play the sound effect now.
-			PlaySFX(IS_GOLD);
+			PlaySFX(SfxID::ItemGold);
 		}
 	} else {
 		// The item needs to go into the players hand
@@ -1629,10 +1621,7 @@ void AutoGetItem(Player &player, Item *itemPointer, int ii)
 {
 	Item &item = *itemPointer;
 
-	if (dropGoldFlag) {
-		CloseGoldDrop();
-		dropGoldValue = 0;
-	}
+	CloseGoldDrop();
 
 	if (dItem[item.position.x][item.position.y] == 0)
 		return;
@@ -1665,7 +1654,7 @@ void AutoGetItem(Player &player, Item *itemPointer, int ii)
 
 	if (done) {
 		if (!autoEquipped && *sgOptions.Audio.itemPickupSound && &player == MyPlayer) {
-			PlaySFX(IS_IGRAB);
+			PlaySFX(SfxID::GrabItem);
 		}
 
 		CleanupItems(ii);
@@ -2026,7 +2015,7 @@ bool UseInvItem(int cii)
 	}
 	if (item->IDidx == IDI_FUNGALTM) {
 
-		PlaySFX(IS_IBOOK);
+		PlaySFX(SfxID::ItemBook);
 		player.Say(HeroSpeech::ThatDidntDoAnything, SpeechDelay);
 		return true;
 	}
@@ -2057,10 +2046,7 @@ bool UseInvItem(int cii)
 		return true;
 	}
 
-	if (dropGoldFlag) {
-		CloseGoldDrop();
-		dropGoldValue = 0;
-	}
+	CloseGoldDrop();
 
 	if (item->isScroll() && leveltype == DTYPE_TOWN && !GetSpellData(item->_iSpell).isAllowedInTown()) {
 		return true;
@@ -2077,11 +2063,11 @@ bool UseInvItem(int cii)
 
 	int idata = ItemCAnimTbl[item->_iCurs];
 	if (item->_iMiscId == IMISC_BOOK)
-		PlaySFX(IS_RBOOK);
+		PlaySFX(SfxID::ReadBook);
 	else if (&player == MyPlayer)
 		PlaySFX(ItemInvSnds[idata]);
 
-	UseItem(player.getId(), item->_iMiscId, item->_iSpell, cii);
+	UseItem(player, item->_iMiscId, item->_iSpell, cii);
 
 	if (speedlist) {
 		if (player.SpdList[c]._iMiscId == IMISC_NOTE) {
@@ -2145,7 +2131,7 @@ void DoTelekinesis()
 	if (ObjectUnderCursor != nullptr && !ObjectUnderCursor->IsDisabled())
 		NetSendCmdLoc(MyPlayerId, true, CMD_OPOBJT, cursPosition);
 	if (pcursitem != -1)
-		NetSendCmdGItem(true, CMD_REQUESTAGITEM, MyPlayerId, pcursitem);
+		NetSendCmdGItem(true, CMD_REQUESTAGITEM, *MyPlayer, pcursitem);
 	if (pcursmonst != -1) {
 		auto &monter = Monsters[pcursmonst];
 		if (!M_Talker(monter) && monter.talkMsg == TEXT_NONE)

@@ -303,10 +303,6 @@ struct Item {
 	 */
 	bool isWeapon() const
 	{
-		if (this->isEmpty()) {
-			return false;
-		}
-
 		switch (this->_itype) {
 		case ItemType::Axe:
 		case ItemType::Bow:
@@ -326,10 +322,6 @@ struct Item {
 	 */
 	bool isArmor() const
 	{
-		if (this->isEmpty()) {
-			return false;
-		}
-
 		switch (this->_itype) {
 		case ItemType::HeavyArmor:
 		case ItemType::LightArmor:
@@ -342,12 +334,21 @@ struct Item {
 	}
 
 	/**
+	 * @brief Checks whether this item is gold.
+	 * @return 'True' in case the item is gold and 'False' otherwise.
+	 */
+	bool isGold() const
+	{
+		return this->_itype == ItemType::Gold;
+	}
+
+	/**
 	 * @brief Checks whether this item is a helm.
 	 * @return 'True' in case the item is a helm and 'False' otherwise.
 	 */
 	bool isHelm() const
 	{
-		return !this->isEmpty() && this->_itype == ItemType::Helm;
+		return this->_itype == ItemType::Helm;
 	}
 
 	/**
@@ -356,7 +357,7 @@ struct Item {
 	 */
 	bool isShield() const
 	{
-		return !this->isEmpty() && this->_itype == ItemType::Shield;
+		return this->_itype == ItemType::Shield;
 	}
 
 	/**
@@ -365,10 +366,6 @@ struct Item {
 	 */
 	bool isJewelry() const
 	{
-		if (this->isEmpty()) {
-			return false;
-		}
-
 		switch (this->_itype) {
 		case ItemType::Amulet:
 		case ItemType::Ring:
@@ -543,7 +540,7 @@ bool DoOil(Player &player, int cii);
 void DrawUniqueInfo(const Surface &out);
 void PrintItemDetails(const Item &item);
 void PrintItemDur(const Item &item);
-void UseItem(size_t pnum, item_misc_id Mid, SpellID spellID, int spellFrom);
+void UseItem(Player &player, item_misc_id Mid, SpellID spellID, int spellFrom);
 bool UseItemOpensHive(const Item &item, Point position);
 bool UseItemOpensGrave(const Item &item, Point position);
 void SpawnSmith(int lvl);
@@ -583,6 +580,6 @@ std::string DebugSpawnUniqueItem(std::string itemName);
 extern int MaxGold;
 
 extern int8_t ItemCAnimTbl[];
-extern _sfx_id ItemInvSnds[];
+extern SfxID ItemInvSnds[];
 
 } // namespace devilution

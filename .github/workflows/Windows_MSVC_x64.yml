@@ -13,6 +13,13 @@ on:
       - '*.md'
       - 'docs/**'
 
+permissions:
+  contents: write
+
+env:
+  VCPKG_FEATURE_FLAGS: dependencygraph
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -33,9 +40,9 @@ jobs:
       uses: lukka/get-cmake@latest
 
     - name: Restore or setup vcpkg
-      uses: lukka/run-vcpkg@v11.1
+      uses: lukka/run-vcpkg@v11.4
       with:
-        vcpkgGitCommitId: 'e8c2a04eb7ca058b6e2f0e6e33c67fdbffeee846'
+        vcpkgGitCommitId: '16ee2ecb31788c336ace8bb14c21801efb6836e4'
 
     - name: Fetch test data
       run: |
@@ -54,7 +61,7 @@ jobs:
 
     - name: Upload-Package
       if: ${{ !env.ACT }}
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: devilutionx.exe
         path: |

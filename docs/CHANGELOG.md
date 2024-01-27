@@ -244,7 +244,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### Gameplay
 
-- Several issues that would cause missiles to miss when they shoudn't
+- Several issues that would cause missiles to miss when they shouldn't
 - Some wall tiles not blocking missiles and vision
 - The player can spawn in an incorrect location on some levels
 - Missing the extra stats at level 50
@@ -260,7 +260,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The Deadly Hunter bow not dealing the correct damage
 - Spell remaining unavailable after using a stone shrine until reequipping the staff
 - Fast and faster hit recovery stacking
-- Incorrect calculation for max chages lost with when using the recharge skill
+- Incorrect calculation for max charges lost with when using the recharge skill
 - Not getting XP after damaging a monster if it dies from a trap
 - Fire Arrows causing monsters to stop healing
 
@@ -754,7 +754,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fix name filtering
 - Correct minor memory leaks
 - Further reduced memory usage
-- Performance improvments
+- Performance improvements
 - Windows: Only show network errors once
 
 ### Bugfixes for original Diablo bugs
@@ -1382,7 +1382,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### January 14, 2019
 
 - [50% of functions are now binary identical](https://github.com/diasurgical/devilution/milestone/3) to the 1.09b version
-- [#456](https://github.com/diasurgical/devilution/pull/456) Assets can now be loaded directly form disk (no need for MPQ-files when modding)
+- [#456](https://github.com/diasurgical/devilution/pull/456) Assets can now be loaded directly from disk (no need for MPQ-files when modding)
 - [#528](https://github.com/diasurgical/devilution/pull/528) Code ported to C (can still be compiled as C++)
 - [#111](https://github.com/diasurgical/devilution/pull/111) Rich Header no longer contains incorrect sections
 - [#182](https://github.com/diasurgical/devilution/pull/182) defined a [Code Style](https://github.com/diasurgical/devilution/wiki/Code-style-guide) with accompanying clang-format definition

@@ -88,50 +88,50 @@ int8_t ItemCAnimTbl[] = {
 };
 
 /** Maps of drop sounds effect of placing the item in the inventory. */
-_sfx_id ItemInvSnds[] = {
-	IS_IHARM,
-	IS_IAXE,
-	IS_IPOT,
-	IS_IBOW,
-	IS_GOLD,
-	IS_ICAP,
-	IS_ISWORD,
-	IS_ISHIEL,
-	IS_ISWORD,
-	IS_IROCK,
-	IS_IAXE,
-	IS_ISTAF,
-	IS_IRING,
-	IS_ICAP,
-	IS_ILARM,
-	IS_ISHIEL,
-	IS_ISCROL,
-	IS_IHARM,
-	IS_IBOOK,
-	IS_IHARM,
-	IS_IPOT,
-	IS_IPOT,
-	IS_IPOT,
-	IS_IPOT,
-	IS_IPOT,
-	IS_IPOT,
-	IS_IPOT,
-	IS_IPOT,
-	IS_IBODY,
-	IS_IBODY,
-	IS_IMUSH,
-	IS_ISIGN,
-	IS_IBLST,
-	IS_IANVL,
-	IS_ISTAF,
-	IS_IROCK,
-	IS_ISCROL,
-	IS_ISCROL,
-	IS_IROCK,
-	IS_IMUSH,
-	IS_IHARM,
-	IS_ILARM,
-	IS_ILARM,
+SfxID ItemInvSnds[] = {
+	SfxID::ItemArmor,
+	SfxID::ItemAxe,
+	SfxID::ItemPotion,
+	SfxID::ItemBow,
+	SfxID::ItemGold,
+	SfxID::ItemCap,
+	SfxID::ItemSword,
+	SfxID::ItemShield,
+	SfxID::ItemSword,
+	SfxID::ItemRock,
+	SfxID::ItemAxe,
+	SfxID::ItemStaff,
+	SfxID::ItemRing,
+	SfxID::ItemCap,
+	SfxID::ItemLeather,
+	SfxID::ItemShield,
+	SfxID::ItemScroll,
+	SfxID::ItemArmor,
+	SfxID::ItemBook,
+	SfxID::ItemArmor,
+	SfxID::ItemPotion,
+	SfxID::ItemPotion,
+	SfxID::ItemPotion,
+	SfxID::ItemPotion,
+	SfxID::ItemPotion,
+	SfxID::ItemPotion,
+	SfxID::ItemPotion,
+	SfxID::ItemPotion,
+	SfxID::ItemBodyPart,
+	SfxID::ItemBodyPart,
+	SfxID::ItemMushroom,
+	SfxID::ItemSign,
+	SfxID::ItemBloodStone,
+	SfxID::ItemAnvil,
+	SfxID::ItemStaff,
+	SfxID::ItemRock,
+	SfxID::ItemScroll,
+	SfxID::ItemScroll,
+	SfxID::ItemRock,
+	SfxID::ItemMushroom,
+	SfxID::ItemArmor,
+	SfxID::ItemLeather,
+	SfxID::ItemLeather,
 };
 
 namespace {
@@ -276,50 +276,50 @@ int8_t ItemAnimLs[] = {
 	15,
 };
 /** Maps of drop sounds effect of dropping the item on ground. */
-_sfx_id ItemDropSnds[] = {
-	IS_FHARM,
-	IS_FAXE,
-	IS_FPOT,
-	IS_FBOW,
-	IS_GOLD,
-	IS_FCAP,
-	IS_FSWOR,
-	IS_FSHLD,
-	IS_FSWOR,
-	IS_FROCK,
-	IS_FAXE,
-	IS_FSTAF,
-	IS_FRING,
-	IS_FCAP,
-	IS_FLARM,
-	IS_FSHLD,
-	IS_FSCRL,
-	IS_FHARM,
-	IS_FBOOK,
-	IS_FLARM,
-	IS_FPOT,
-	IS_FPOT,
-	IS_FPOT,
-	IS_FPOT,
-	IS_FPOT,
-	IS_FPOT,
-	IS_FPOT,
-	IS_FPOT,
-	IS_FBODY,
-	IS_FBODY,
-	IS_FMUSH,
-	IS_FSIGN,
-	IS_FBLST,
-	IS_FANVL,
-	IS_FSTAF,
-	IS_FROCK,
-	IS_FSCRL,
-	IS_FSCRL,
-	IS_FROCK,
-	IS_FMUSH,
-	IS_FHARM,
-	IS_FLARM,
-	IS_FLARM,
+SfxID ItemDropSnds[] = {
+	SfxID::ItemArmorFlip,
+	SfxID::ItemAxeFlip,
+	SfxID::ItemPotionFlip,
+	SfxID::ItemBowFlip,
+	SfxID::ItemGold,
+	SfxID::ItemCapFlip,
+	SfxID::ItemSwordFlip,
+	SfxID::ItemShieldFlip,
+	SfxID::ItemSwordFlip,
+	SfxID::ItemRockFlip,
+	SfxID::ItemAxeFlip,
+	SfxID::ItemStaffFlip,
+	SfxID::ItemRingFlip,
+	SfxID::ItemCapFlip,
+	SfxID::ItemLeatherFlip,
+	SfxID::ItemShieldFlip,
+	SfxID::ItemScrollFlip,
+	SfxID::ItemArmorFlip,
+	SfxID::ItemBookFlip,
+	SfxID::ItemLeatherFlip,
+	SfxID::ItemPotionFlip,
+	SfxID::ItemPotionFlip,
+	SfxID::ItemPotionFlip,
+	SfxID::ItemPotionFlip,
+	SfxID::ItemPotionFlip,
+	SfxID::ItemPotionFlip,
+	SfxID::ItemPotionFlip,
+	SfxID::ItemPotionFlip,
+	SfxID::ItemBodyPartFlip,
+	SfxID::ItemBodyPartFlip,
+	SfxID::ItemMushroomFlip,
+	SfxID::ItemSignFlip,
+	SfxID::ItemBloodStoneFlip,
+	SfxID::ItemAnvilFlip,
+	SfxID::ItemStaffFlip,
+	SfxID::ItemRockFlip,
+	SfxID::ItemScrollFlip,
+	SfxID::ItemScrollFlip,
+	SfxID::ItemRockFlip,
+	SfxID::ItemMushroomFlip,
+	SfxID::ItemArmorFlip,
+	SfxID::ItemLeatherFlip,
+	SfxID::ItemLeatherFlip,
 };
 /** Maps from Griswold premium item number to a quality level delta as added to the base quality level. */
 int premiumlvladd[] = {
@@ -1097,7 +1097,7 @@ int GetStaffPrefixId(int lvl, bool onlygood, bool hellfireItem)
 	if (FlipCoin(10) || onlygood) {
 		int nl = 0;
 		int l[256];
-		for (int j = 0; ItemPrefixes[j].power.type != IPL_INVALID; j++) {
+		for (int j = 0, n = static_cast<int>(ItemPrefixes.size()); j < n; ++j) {
 			if (!IsPrefixValidForItemType(j, AffixItemType::Staff, hellfireItem) || ItemPrefixes[j].PLMinLvl > lvl)
 				continue;
 			if (onlygood && !ItemPrefixes[j].PLOk)
@@ -1205,7 +1205,7 @@ void GetItemPowerPrefixAndSuffix(int minlvl, int maxlvl, AffixItemType flgs, boo
 		onlygood = true;
 	if (allocatePrefix) {
 		int nt = 0;
-		for (int j = 0; ItemPrefixes[j].power.type != IPL_INVALID; j++) {
+		for (int j = 0, n = static_cast<int>(ItemPrefixes.size()); j < n; ++j) {
 			if (!IsPrefixValidForItemType(j, flgs, hellfireItem))
 				continue;
 			if (ItemPrefixes[j].PLMinLvl < minlvl || ItemPrefixes[j].PLMinLvl > maxlvl)
@@ -1229,7 +1229,7 @@ void GetItemPowerPrefixAndSuffix(int minlvl, int maxlvl, AffixItemType flgs, boo
 	}
 	if (allocateSuffix) {
 		int nl = 0;
-		for (int j = 0; ItemSuffixes[j].power.type != IPL_INVALID; j++) {
+		for (int j = 0, n = static_cast<int>(ItemSuffixes.size()); j < n; ++j) {
 			if (IsSuffixValidForItemType(j, flgs, hellfireItem)
 			    && ItemSuffixes[j].PLMinLvl >= minlvl && ItemSuffixes[j].PLMinLvl <= maxlvl
 			    && !((goe == GOE_GOOD && ItemSuffixes[j].PLGOE == GOE_EVIL) || (goe == GOE_EVIL && ItemSuffixes[j].PLGOE == GOE_GOOD))
@@ -1330,7 +1330,7 @@ void GetOilType(Item &item, int maxLvl)
 		cnt = 0;
 		for (size_t j = 0; j < sizeof(OilLevels) / sizeof(OilLevels[0]); j++) {
 			if (OilLevels[j] <= maxLvl) {
-				rnd[cnt] = j;
+				rnd[cnt] = static_cast<int8_t>(j);
 				cnt++;
 			}
 		}
@@ -1462,7 +1462,7 @@ _unique_items CheckUnique(Item &item, int lvl, int uper, bool recreate)
 		return UITEM_INVALID;
 
 	int numu = 0;
-	for (int j = 0; UniqueItems[j].UIItemId != UITYPE_INVALID; j++) {
+	for (int j = 0, n = static_cast<int>(UniqueItems.size()); j < n; ++j) {
 		if (!IsUniqueAvailable(j))
 			break;
 		if (UniqueItems[j].UIItemId == AllItemsList[item.IDidx].iItemId
@@ -3686,7 +3686,7 @@ void DoRepair(Player &player, int cii)
 {
 	Item *pi;
 
-	PlaySfxLoc(IS_REPAIR, player.position.tile);
+	PlaySfxLoc(SfxID::SpellRepair, player.position.tile);
 
 	if (cii >= NUM_INVLOC) {
 		pi = &player.InvList[cii - NUM_INVLOC];
@@ -3946,7 +3946,7 @@ void DrawUniqueInfo(const Surface &out)
 
 	Rectangle rect { position + Displacement { 32, 56 }, { 257, 0 } };
 	const UniqueItem &uitem = UniqueItems[curruitem._iUid];
-	DrawString(out, _(uitem.UIName), rect, UiFlags::AlignCenter);
+	DrawString(out, _(uitem.UIName), rect, { .flags = UiFlags::AlignCenter });
 
 	const Rectangle dividerLineRect { position + Displacement { 26, 25 }, { 267, 3 } };
 	out.BlitFrom(out, MakeSdlRect(dividerLineRect), dividerLineRect.position + Displacement { 0, 5 * 12 + 13 });
@@ -3957,7 +3957,8 @@ void DrawUniqueInfo(const Surface &out)
 		if (power.type == IPL_INVALID)
 			break;
 		rect.position.y += 2 * 12;
-		DrawString(out, PrintItemPower(power.type, curruitem), rect, UiFlags::ColorWhite | UiFlags::AlignCenter);
+		DrawString(out, PrintItemPower(power.type, curruitem), rect,
+		    { .flags = UiFlags::ColorWhite | UiFlags::AlignCenter });
 	}
 }
 
@@ -4041,9 +4042,8 @@ void PrintItemDur(const Item &item)
 	PrintItemInfo(item);
 }
 
-void UseItem(size_t pnum, item_misc_id mid, SpellID spellID, int spellFrom)
+void UseItem(Player &player, item_misc_id mid, SpellID spellID, int spellFrom)
 {
-	Player &player = Players[pnum];
 	std::optional<SpellID> prepareSpellID;
 
 	switch (mid) {
@@ -4481,11 +4481,11 @@ void SpawnBoy(int lvl)
 
 void SpawnHealer(int lvl)
 {
-	constexpr int PinnedItemCount = 2;
+	constexpr size_t PinnedItemCount = 2;
 	constexpr std::array<_item_indexes, PinnedItemCount + 1> PinnedItemTypes = { IDI_HEAL, IDI_FULLHEAL, IDI_RESURRECT };
-	const int itemCount = RandomIntBetween(10, gbIsHellfire ? 19 : 17);
+	const auto itemCount = static_cast<size_t>(RandomIntBetween(10, gbIsHellfire ? 19 : 17));
 
-	for (int i = 0; i < sizeof(healitem) / sizeof(healitem[0]); i++) {
+	for (size_t i = 0; i < sizeof(healitem) / sizeof(healitem[0]); ++i) {
 		Item &item = healitem[i];
 		item = {};
 
@@ -4637,10 +4637,7 @@ void PutItemRecord(uint32_t nSeed, uint16_t wCI, int nIndex)
 std::mt19937 BetterRng;
 std::string DebugSpawnItem(std::string itemName)
 {
-	std::string cmdLabel = "[drop] ";
-
-	if (ActiveItemCount >= MAXITEMS)
-		return StrCat(cmdLabel, "No space to generate the item!");
+	if (ActiveItemCount >= MAXITEMS) return "No space to generate the item!";
 
 	const int max_time = 3000;
 	const int max_iter = 1000000;
@@ -4656,10 +4653,10 @@ std::string DebugSpawnItem(std::string itemName)
 		std::uniform_int_distribution<int32_t> dist(0, INT_MAX);
 		SetRndSeed(dist(BetterRng));
 		if (SDL_GetTicks() - begin > max_time)
-			return StrCat(cmdLabel, "Item not found in ", max_time / 1000, " seconds!");
+			return StrCat("Item not found in ", max_time / 1000, " seconds!");
 
 		if (i > max_iter)
-			return StrCat(cmdLabel, "Item not found in ", max_iter, " tries!");
+			return StrCat("Item not found in ", max_iter, " tries!");
 
 		const int8_t monsterLevel = dist(BetterRng) % CF_LEVEL + 1;
 		_item_indexes idx = RndItemForMonsterLevel(monsterLevel);
@@ -4681,25 +4678,22 @@ std::string DebugSpawnItem(std::string itemName)
 	Point pos = MyPlayer->position.tile;
 	GetSuperItemSpace(pos, ii);
 	NetSendCmdPItem(false, CMD_SPAWNITEM, item.position, item);
-	return StrCat(cmdLabel, "Item generated successfully - iterations: ", i);
+	return StrCat("Item generated successfully - iterations: ", i);
 }
 
 std::string DebugSpawnUniqueItem(std::string itemName)
 {
-	std::string cmdLabel = "[dropu] ";
-
-	if (ActiveItemCount >= MAXITEMS)
-		return StrCat(cmdLabel, "No space to generate the item!");
+	if (ActiveItemCount >= MAXITEMS) return "No space to generate the item!";
 
 	AsciiStrToLower(itemName);
 	UniqueItem uniqueItem;
 	bool foundUnique = false;
 	int uniqueIndex = 0;
-	for (int j = 0; UniqueItems[j].UIItemId != UITYPE_INVALID; j++) {
+	for (int j = 0, n = static_cast<int>(UniqueItems.size()); j < n; ++j) {
 		if (!IsUniqueAvailable(j))
 			break;
 
-		const std::string tmp = AsciiStrToLower(UniqueItems[j].UIName);
+		const std::string tmp = AsciiStrToLower(std::string_view(UniqueItems[j].UIName));
 		if (tmp.find(itemName) != std::string::npos) {
 			itemName = tmp;
 			uniqueItem = UniqueItems[j];
@@ -4708,8 +4702,7 @@ std::string DebugSpawnUniqueItem(std::string itemName)
 			break;
 		}
 	}
-	if (!foundUnique)
-		return StrCat(cmdLabel, "No unique item found!");
+	if (!foundUnique) return "No unique item found!";
 
 	_item_indexes uniqueBaseIndex = IDI_GOLD;
 	for (std::underlying_type_t<_item_indexes> j = IDI_GOLD; j <= IDI_LAST; j++) {
@@ -4721,8 +4714,7 @@ std::string DebugSpawnUniqueItem(std::string itemName)
 		}
 	}
 
-	if (uniqueBaseIndex == IDI_GOLD)
-		return StrCat(cmdLabel, "Base item not available!");
+	if (uniqueBaseIndex == IDI_GOLD) return "Base item not available!";
 
 	auto &baseItemData = AllItemsList[static_cast<size_t>(uniqueBaseIndex)];
 
@@ -4732,11 +4724,11 @@ std::string DebugSpawnUniqueItem(std::string itemName)
 	for (uint32_t begin = SDL_GetTicks();; i++) {
 		constexpr int max_time = 3000;
 		if (SDL_GetTicks() - begin > max_time)
-			return StrCat(cmdLabel, "Item not found in ", max_time / 1000, " seconds!");
+			return StrCat("Item not found in ", max_time / 1000, " seconds!");
 
 		constexpr int max_iter = 1000000;
 		if (i > max_iter)
-			return StrCat(cmdLabel, "Item not found in ", max_iter, " tries!");
+			return StrCat("Item not found in ", max_iter, " tries!");
 
 		testItem = {};
 		testItem._iMiscId = baseItemData.iMiscId;
@@ -4755,7 +4747,7 @@ std::string DebugSpawnUniqueItem(std::string itemName)
 		const std::string tmp = AsciiStrToLower(testItem._iIName);
 		if (tmp.find(itemName) != std::string::npos)
 			break;
-		return StrCat(cmdLabel, "Impossible to generate!");
+		return "Impossible to generate!";
 	}
 
 	int ii = AllocateItem();
@@ -4766,7 +4758,7 @@ std::string DebugSpawnUniqueItem(std::string itemName)
 	item._iIdentified = true;
 	NetSendCmdPItem(false, CMD_SPAWNITEM, item.position, item);
 
-	return StrCat(cmdLabel, "Item generated successfully - iterations: ", i);
+	return StrCat("Item generated successfully - iterations: ", i);
 }
 #endif
 

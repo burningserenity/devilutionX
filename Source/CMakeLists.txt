@@ -12,9 +12,9 @@ set(libdevilutionx_SRCS
   dead.cpp
   debug.cpp
   diablo.cpp
+  diablo_msg.cpp
   doom.cpp
   engine.cpp
-  error.cpp
   gamemenu.cpp
   gmenu.cpp
   help.cpp
@@ -70,6 +70,7 @@ set(libdevilutionx_SRCS
 
   data/file.cpp
   data/parser.cpp
+  data/record_reader.cpp
 
   DiabloUI/button.cpp
   DiabloUI/credits.cpp
@@ -88,6 +89,7 @@ set(libdevilutionx_SRCS
   DiabloUI/settingsmenu.cpp
   DiabloUI/support_lines.cpp
   DiabloUI/title.cpp
+  DiabloUI/text_input.cpp
 
   dvlnet/abstract_net.cpp
   dvlnet/base.cpp
@@ -131,7 +133,29 @@ set(libdevilutionx_SRCS
   levels/town.cpp
   levels/trigs.cpp
 
+  lua/autocomplete.cpp
+  lua/lua.cpp
+  lua/modules/audio.cpp
+  lua/modules/dev.cpp
+  lua/modules/dev/display.cpp
+  lua/modules/dev/items.cpp
+  lua/modules/dev/level.cpp
+  lua/modules/dev/level/map.cpp
+  lua/modules/dev/level/warp.cpp
+  lua/modules/dev/monsters.cpp
+  lua/modules/dev/player.cpp
+  lua/modules/dev/player/gold.cpp
+  lua/modules/dev/player/spells.cpp
+  lua/modules/dev/player/stats.cpp
+  lua/modules/dev/quests.cpp
+  lua/modules/dev/search.cpp
+  lua/modules/dev/towners.cpp
+  lua/modules/log.cpp
+  lua/modules/render.cpp
+  lua/repl.cpp
+
   panels/charpanel.cpp
+  panels/console.cpp
   panels/info_box.cpp
   panels/mainpanel.cpp
   panels/spell_book.cpp
@@ -286,6 +310,8 @@ if(DISCORD_INTEGRATION)
   target_compile_definitions(libdevilutionx PRIVATE DISCORD)
   target_link_libraries(libdevilutionx PRIVATE discord discord_game_sdk)
 endif()
+
+target_link_libraries(libdevilutionx PUBLIC ${LUA_LIBRARIES} sol2::sol2)
 
 if(SCREEN_READER_INTEGRATION AND WIN32)
   target_compile_definitions(libdevilutionx PRIVATE Tolk)

@@ -53,6 +53,11 @@ DVL_ALWAYS_INLINE constexpr bool IsNoneOf(const V &v, X x, Xs... xs)
 }
 
 /**
+ * @brief Fill a rectangle with the given color.
+ */
+void FillRect(const Surface &out, int x, int y, int width, int height, uint8_t colorIndex);
+
+/**
  * @brief Draw a horizontal line segment in the target buffer (left to right)
  * @param out Target buffer
  * @param from Start of the line segment
@@ -77,8 +82,7 @@ void DrawVerticalLine(const Surface &out, Point from, int height, std::uint8_t c
 void UnsafeDrawVerticalLine(const Surface &out, Point from, int height, std::uint8_t colorIndex);
 
 /**
- * Draws a half-transparent rectangle by blacking out odd pixels on odd lines,
- * even pixels on even lines.
+ * Draws a half-transparent rectangle by palette blending with black.
  *
  * @brief Render a transparent black rectangle
  * @param out Target buffer

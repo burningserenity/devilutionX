@@ -318,7 +318,11 @@ void LoadItemData(LoadHelper &file, Item &item)
 	else
 		item._iDamAcFlags = ItemSpecialEffectHf::None;
 	UpdateHellfireFlag(item, item._iIName);
+}
 
+void LoadAndValidateItemData(LoadHelper &file, Item &item)
+{
+	LoadItemData(file, item);
 	RemoveInvalidItem(item);
 }
 
@@ -487,10 +491,10 @@ void LoadPlayer(LoadHelper &file, Player &player)
 	file.Skip<uint32_t>(); // skip _pBWidth
 
 	for (Item &item : player.InvBody)
-		LoadItemData(file, item);
+		LoadAndValidateItemData(file, item);
 
 	for (Item &item : player.InvList)
-		LoadItemData(file, item);
+		LoadAndValidateItemData(file, item);
 
 	player._pNumInv = file.NextLE<int32_t>();
 
@@ -498,9 +502,9 @@ void LoadPlayer(LoadHelper &file, Player &player)
 		cell = file.NextLE<int8_t>();
 
 	for (Item &item : player.SpdList)
-		LoadItemData(file, item);
+		LoadAndValidateItemData(file, item);
 
-	LoadItemData(file, player.HoldItem);
+	LoadAndValidateItemData(file, player.HoldItem);
 
 	player._pIMinDam = file.NextLE<int32_t>();
 	player._pIMaxDam = file.NextLE<int32_t>();
@@ -822,13 +826,13 @@ void LoadObject(LoadHelper &file, Object &object)
 
 void LoadItem(LoadHelper &file, Item &item)
 {
-	LoadItemData(file, item);
+	LoadAndValidateItemData(file, item);
 	GetItemFrm(item);
 }
 
 void LoadPremium(LoadHelper &file, int i)
 {
-	LoadItemData(file, premiumitems[i]);
+	LoadAndValidateItemData(file, premiumitems[i]);
 }
 
 void LoadQuest(LoadHelper *file, int i)
@@ -967,6 +971,11 @@ void LoadMatchingItems(LoadHelper &file, const Player &player, const int n, Item
 			if ((heroItem.dwBuff & CF_HELLFIRE) != (unpackedItem.dwBuff & CF_HELLFIRE)) {
 				unpackedItem = {};
 				RecreateItem(player, unpackedItem, heroItem.IDidx, heroItem._iCreateInfo, heroItem._iSeed, heroItem._ivalue, (heroItem.dwBuff & CF_HELLFIRE) != 0);
+				unpackedItem._iIdentified = heroItem._iIdentified;
+				unpackedItem._iMaxDur = heroItem._iMaxDur;
+				unpackedItem._iDurability = ClampDurability(unpackedItem, heroItem._iDurability);
+				unpackedItem._iMaxCharges = std::clamp<int>(heroItem._iMaxCharges, 0, unpackedItem._iMaxCharges);
+				unpackedItem._iCharges = std::clamp<int>(heroItem._iCharges, 0, unpackedItem._iMaxCharges);
 			}
 			if (!IsShopPriceValid(unpackedItem)) {
 				unpackedItem.clear();
@@ -2068,7 +2077,7 @@ void LoadStash()
 	auto itemCount = file.NextLE<uint32_t>();
 	Stash.stashList.resize(itemCount);
 	for (unsigned i = 0; i < itemCount; i++) {
-		LoadItemData(file, Stash.stashList[i]);
+		LoadAndValidateItemData(file, Stash.stashList[i]);
 	}
 
 	Stash.SetPage(file.NextLE<uint32_t>());
@@ -2400,7 +2409,7 @@ void SaveGameData(SaveWriter &saveWriter)
 	file.WriteBE<int32_t>(ViewPosition.y);
 	file.WriteLE<uint8_t>(invflag ? 1 : 0);
 	file.WriteLE<uint8_t>(chrflag ? 1 : 0);
-	file.WriteBE<int32_t>(ActiveMonsterCount);
+	file.WriteBE(static_cast<int32_t>(ActiveMonsterCount));
 	file.WriteBE<int32_t>(ActiveItemCount);
 	// ActiveMissileCount will be a value from 0-125 (for vanilla compatibility). Writing an unsigned value here to avoid
 	// warnings about casting from unsigned to signed, but there's no sign extension issues when reading this as a signed
@@ -2460,7 +2469,7 @@ void SaveGameData(SaveWriter &saveWriter)
 		for (int i = 0; i < ActiveLightCount; i++)
 			SaveLighting(&file, &Lights[ActiveLights[i]]);
 
-		int visionCount = Players.size();
+		const auto visionCount = static_cast<int32_t>(Players.size());
 		file.WriteBE<int32_t>(visionCount + 1); // VisionId
 		file.WriteBE<int32_t>(visionCount);
 
@@ -2558,7 +2567,7 @@ void SaveLevel(SaveWriter &saveWriter)
 		}
 	}
 
-	file.WriteBE<int32_t>(ActiveMonsterCount);
+	file.WriteBE(static_cast<int32_t>(ActiveMonsterCount));
 	file.WriteBE<int32_t>(ActiveItemCount);
 	file.WriteBE<int32_t>(ActiveObjectCount);
 

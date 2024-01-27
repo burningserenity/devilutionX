@@ -370,7 +370,7 @@ void ScrollVendorStore(Item *itemData, int storeLimit, int idx, int selling = tr
 		if (stextsel != -1 && !stext[stextsel].isSelectable() && stextsel != BackButtonLine())
 			stextsel = stextdown;
 	} else {
-		stextsmax = std::max(storeLimit - 4, 0);
+		stextsmax = std::max(static_cast<int>(storeLimit) - 4, 0);
 	}
 }
 
@@ -393,7 +393,7 @@ void StartSmith()
 
 void ScrollSmithBuy(int idx)
 {
-	ScrollVendorStore(smithitem, std::size(smithitem), idx);
+	ScrollVendorStore(smithitem, static_cast<int>(std::size(smithitem)), idx);
 }
 
 uint32_t TotalPlayerGold()
@@ -439,7 +439,7 @@ void ScrollSmithPremiumBuy(int boughtitems)
 			boughtitems--;
 	}
 
-	ScrollVendorStore(premiumitems, std::size(premiumitems), idx);
+	ScrollVendorStore(premiumitems, static_cast<int>(std::size(premiumitems)), idx);
 }
 
 bool StartSmithPremiumBuy()
@@ -579,14 +579,17 @@ void StartSmithSell()
 bool SmithRepairOk(int i)
 {
 	const Player &myPlayer = *MyPlayer;
+	const Item &item = myPlayer.InvList[i];
 
-	if (myPlayer.InvList[i].isEmpty())
+	if (item.isEmpty())
 		return false;
-	if (myPlayer.InvList[i]._itype == ItemType::Misc)
+	if (item._itype == ItemType::Misc)
 		return false;
-	if (myPlayer.InvList[i]._itype == ItemType::Gold)
+	if (item._itype == ItemType::Gold)
 		return false;
-	if (myPlayer.InvList[i]._iDurability == myPlayer.InvList[i]._iMaxDur)
+	if (item._iDurability == item._iMaxDur)
+		return false;
+	if (item._iMaxDur == DUR_INDESTRUCTIBLE)
 		return false;
 
 	return true;
@@ -661,7 +664,7 @@ void FillManaPlayer()
 	Player &myPlayer = *MyPlayer;
 
 	if (myPlayer._pMana != myPlayer._pMaxMana) {
-		PlaySFX(IS_CAST8);
+		PlaySFX(SfxID::CastHealing);
 	}
 	myPlayer._pMana = myPlayer._pMaxMana;
 	myPlayer._pManaBase = myPlayer._pMaxManaBase;
@@ -686,7 +689,7 @@ void StartWitch()
 
 void ScrollWitchBuy(int idx)
 {
-	ScrollVendorStore(witchitem, std::size(witchitem), idx);
+	ScrollVendorStore(witchitem, static_cast<int>(std::size(witchitem)), idx);
 }
 
 void WitchBookLevel(Item &bookItem)
@@ -1011,7 +1014,7 @@ void HealPlayer()
 	Player &myPlayer = *MyPlayer;
 
 	if (myPlayer._pHitPoints != myPlayer._pMaxHP) {
-		PlaySFX(IS_CAST8);
+		PlaySFX(SfxID::CastHealing);
 	}
 	myPlayer._pHitPoints = myPlayer._pMaxHP;
 	myPlayer._pHPBase = myPlayer._pMaxHPBase;
@@ -1035,7 +1038,7 @@ void StartHealer()
 
 void ScrollHealerBuy(int idx)
 {
-	ScrollVendorStore(healitem, std::size(healitem), idx);
+	ScrollVendorStore(healitem, static_cast<int>(std::size(healitem)), idx);
 }
 
 void StartHealerBuy()
@@ -2197,13 +2200,13 @@ void PrintSString(const Surface &out, int margin, int line, std::string_view tex
 
 	if (*sgOptions.Gameplay.showItemGraphicsInStores && cursIndent) {
 		const Rectangle textRect { { rect.position.x + HalfCursWidth + 8, rect.position.y }, { rect.size.width - HalfCursWidth + 8, rect.size.height } };
-		DrawString(out, text, textRect, flags);
+		DrawString(out, text, textRect, { .flags = flags });
 	} else {
-		DrawString(out, text, rect, flags);
+		DrawString(out, text, rect, { .flags = flags });
 	}
 
 	if (price > 0)
-		DrawString(out, FormatInteger(price), rect, flags | UiFlags::AlignRight);
+		DrawString(out, FormatInteger(price), rect, { .flags = flags | UiFlags::AlignRight });
 
 	if (stextsel == line) {
 		DrawSelector(out, rect, text, flags);
@@ -2489,7 +2492,7 @@ void StoreESC()
 
 void StoreUp()
 {
-	PlaySFX(IS_TITLEMOV);
+	PlaySFX(SfxID::MenuMove);
 	if (stextsel == -1) {
 		return;
 	}
@@ -2526,7 +2529,7 @@ void StoreUp()
 
 void StoreDown()
 {
-	PlaySFX(IS_TITLEMOV);
+	PlaySFX(SfxID::MenuMove);
 	if (stextsel == -1) {
 		return;
 	}
@@ -2563,7 +2566,7 @@ void StoreDown()
 
 void StorePrior()
 {
-	PlaySFX(IS_TITLEMOV);
+	PlaySFX(SfxID::MenuMove);
 	if (stextsel != -1 && stextscrl) {
 		if (stextsel == stextup) {
 			stextsval = std::max(stextsval - 4, 0);
@@ -2575,7 +2578,7 @@ void StorePrior()
 
 void StoreNext()
 {
-	PlaySFX(IS_TITLEMOV);
+	PlaySFX(SfxID::MenuMove);
 	if (stextsel != -1 && stextscrl) {
 		if (stextsel == stextdown) {
 			if (stextsval < stextsmax)
@@ -2613,7 +2616,7 @@ void StoreEnter()
 		return;
 	}
 
-	PlaySFX(IS_TITLSLCT);
+	PlaySFX(SfxID::MenuSelect);
 	switch (stextflag) {
 	case TalkID::Smith:
 		SmithEnter();
